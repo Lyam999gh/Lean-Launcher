@@ -1,0 +1,117 @@
+{
+  "name": "lean-launcher",
+  "version": "1.0.0",
+  "description": "Lean Launcher - Custom Minecraft Launcher",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "electron": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --win --mac --linux",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": [],
+  "author": "Lyam",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "electron-updater": "^6.3.9",
+    "minecraft-launcher-core": "^3.18.2",
+    "msmc": "^5.0.5"
+  },
+  "devDependencies": {
+    "electron": "^26.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.lyam.leanlauncher",
+    "productName": "Lean Launcher",
+    "directories": {
+      "output": "dist"
+    },
+    "icon": "icon.png",
+    "asar": false,
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.js",
+      "index.html",
+      "ui.js",
+      "style.css",
+      "package.json",
+      "icon.png",
+      "lib/**/*",
+      "mod-profiles/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "mod-profiles",
+        "to": "mod-profiles"
+      },
+      {
+        "from": "icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.png",
+      "publish": {
+        "provider": "github"
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "icon": "icon.png",
+      "target": [
+        {
+          "target": "dmg"
+        },
+        {
+          "target": "zip"
+        }
+      ],
+      "category": "public.app-category.games",
+      "publish": {
+        "provider": "github"
+      }
+    },
+    "linux": {
+      "icon": "icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Game",
+      "publish": {
+        "provider": "github"
+      }
+    }
+  }
+}

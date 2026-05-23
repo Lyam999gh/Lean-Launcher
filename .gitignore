@@ -1,0 +1,15 @@
+node_modules
+.env
+auth-cache.json
+settings.json
+minecraft/usercache.json
+minecraft/launcher_profiles.json
+minecraft/options.txt
+minecraft/logs/
+minecraft/cache/
+minecraft/saves/
+minecraft/instances/
+minecraft/assets/
+minecraft/libraries/
+minecraft/natives/
+dist/
