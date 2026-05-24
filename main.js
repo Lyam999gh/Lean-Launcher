@@ -380,6 +380,13 @@ ipcMain.on('restart-and-install', () => {
   autoUpdater.quitAndInstall(false, true);
 });
 
+// GPU acceleration — fixes low framerate on Windows
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('disable-gpu-vsync');
+app.commandLine.appendSwitch('enable-features', 'UseSkiaRenderer');
+
 app.whenReady().then(() => {
   const win = createWindow();
 
