@@ -1818,7 +1818,6 @@ async function initUI() {
         el.style.position = 'absolute';
         el.style.left = '0';
         el.style.top = '0';
-        el.style.willChange = 'transform,opacity';
         layer.appendChild(el);
         return el;
     }
@@ -1843,15 +1842,16 @@ async function initUI() {
         if (!item) return null;
         item.active = true;
         if (!recycledItem) {
-            item.size = 90 + Math.random() * 200;
+            item.size = 180 + Math.random() * 320;
+            const s = Math.round(item.size);
+            item.el.style.width = item.el.style.height = `${s}px`;
         }
         const s = Math.round(item.size);
-        item.el.style.width = item.el.style.height = `${s}px`;
         const maxX = Math.max(vw - 2 * SAFE - item.size, 0);
         item.x = SAFE + Math.random() * maxX;
         item.y = prefill ? Math.random() * vh : vh + 100 + Math.random() * 200;
-        item.opacity = prefill ? 1 : 0;
-        item.speed = 0.4 + Math.random() * 0.5;
+        item.opacity = prefill ? 0.15 : 0;
+        item.speed = 0.3 + Math.random() * 0.4;
         item.created = now();
         item.attractionTime = 0;
         item.el.style.opacity = item.opacity;

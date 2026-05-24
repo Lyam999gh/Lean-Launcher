@@ -167,8 +167,7 @@ body {
     top: 0;
     left: 0;
     border-radius: 50%;
-    background: var(--bubble);
-    filter: blur(35px);
+    background: radial-gradient(circle, var(--bubble) 0%, transparent 70%);
     transition: background 0.4s ease;
     opacity: 0;
     pointer-events: none;
@@ -228,14 +227,11 @@ body {
     align-items: center;
     position: relative;
     background: var(--panel-bg);
-    backdrop-filter: blur(20px) saturate(130%) brightness(1);
-    -webkit-backdrop-filter: blur(20px) saturate(130%) brightness(1);
     border: 1px solid var(--panel-border);
     box-shadow: var(--panel-shadow);
     border-radius: 999px;
     transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1), background 0.4s ease, border-color 0.4s ease;
     overflow: hidden;
-    will-change: transform;
 }
 
 /* Glass Shader — top-left bright edge + diagonal sheen */
@@ -349,9 +345,7 @@ body {
     left: 0;
     width: 0;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px) brightness(1.2);
-    -webkit-backdrop-filter: blur(10px) brightness(1.2);
+    background: rgba(255, 255, 255, 0.15);
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     opacity: 0;
@@ -995,7 +989,6 @@ body {
     transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.45s ease;
     opacity: 0;
     pointer-events: none;
-    will-change: transform, opacity;
 }
 
 .page-view.active-page {
@@ -1139,8 +1132,6 @@ textarea,
 .btn-dark,
 .btn-manage {
     background: var(--input-bg);
-    backdrop-filter: blur(10px) saturate(120%);
-    -webkit-backdrop-filter: blur(10px) saturate(120%);
     border: 1px solid var(--panel-border);
     transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -1329,8 +1320,6 @@ select {
     position: relative;
     /* for shader */
     background: var(--panel-bg);
-    backdrop-filter: blur(20px) saturate(130%) brightness(1);
-    -webkit-backdrop-filter: blur(20px) saturate(130%) brightness(1);
     border: 1px solid var(--panel-border);
     border-radius: 30px;
     width: 60%;
