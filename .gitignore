@@ -13,3 +13,7 @@ minecraft/assets/
 minecraft/libraries/
 minecraft/natives/
 dist/
+lean-launcher-*/
+linux-unpacked/
+squashfs-root/
+LeanClient copy*/
