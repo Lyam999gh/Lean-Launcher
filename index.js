@@ -230,7 +230,8 @@ function getGlobalSettings() {
     return {
         theme: globalSettings.theme || "light",
         language: globalSettings.language || "en",
-        closeOnBoot: Boolean(globalSettings.closeOnBoot)
+        closeOnBoot: Boolean(globalSettings.closeOnBoot),
+        simpleMode: Boolean(globalSettings.simpleMode)
     };
 }
 function saveGlobalSettings(glob) { const all = loadSettings(); all._global = glob; saveSettings(all); }

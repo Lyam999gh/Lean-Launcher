@@ -1810,6 +1810,62 @@ select {
     color: var(--text);
 }
 
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    margin-left: 6px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--text);
+    border: 1.5px solid var(--text);
+    border-radius: 50%;
+    cursor: help;
+    position: relative;
+    vertical-align: middle;
+    flex-shrink: 0;
+    user-select: none;
+    opacity: 0.55;
+    transition: opacity 0.2s ease;
+}
+
+.info-icon:hover {
+    opacity: 1;
+}
+
+.info-tooltip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    background: var(--panel-bg);
+    backdrop-filter: blur(14px) saturate(130%);
+    -webkit-backdrop-filter: blur(14px) saturate(130%);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 0.75rem;
+    font-weight: 400;
+    white-space: nowrap;
+    color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    z-index: 1000;
+    pointer-events: none;
+    line-height: 1.4;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(6px);
+    transition: opacity 0.2s ease, transform 0.25s ease, visibility 0s 0.25s;
+}
+
+.info-icon:hover .info-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition: opacity 0.2s ease, transform 0.25s ease, visibility 0s 0s;
+}
+
 .dropdown-ui {
     font-family: "Inter", sans-serif;
     font-weight: 600;
@@ -2741,4 +2797,47 @@ input:checked+.slider:before {
     opacity: 0.4;
     cursor: not-allowed;
     pointer-events: none;
+}
+
+/* --- Simple Launcher Mode: strip glass effects & animations --- */
+[data-simple="true"] .user-section,
+[data-simple="true"] .nav-links,
+[data-simple="true"] .window-controls,
+[data-simple="true"] .glass-panel,
+[data-simple="true"] .win-btn,
+[data-simple="true"] .dropdown-ui,
+[data-simple="true"] .slider,
+[data-simple="true"] input,
+[data-simple="true"] button:not(.nav-btn):not(.win-btn),
+[data-simple="true"] .auth-account-card,
+[data-simple="true"] .crash-report-content,
+[data-simple="true"] .file-editor-content,
+[data-simple="true"] .modal-content,
+[data-simple="true"] .update-modal-content {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important;
+}
+
+[data-simple="true"] .glass-panel::before,
+[data-simple="true"] .glass-panel::after,
+[data-simple="true"] .user-section::before,
+[data-simple="true"] .user-section::after,
+[data-simple="true"] .nav-links::before,
+[data-simple="true"] .nav-links::after,
+[data-simple="true"] .window-controls::before,
+[data-simple="true"] .window-controls::after {
+    display: none !important;
+}
+
+[data-simple="true"] *,
+[data-simple="true"] *::before,
+[data-simple="true"] *::after {
+    transition: none !important;
+    animation: none !important;
+}
+
+[data-simple="true"] #bubbleLayer,
+[data-simple="true"] .bubble {
+    display: none !important;
 }

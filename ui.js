@@ -40,7 +40,7 @@ const PROFILE_ORDER = ['lightweight', 'balanced', 'full'];
 const userSection = document.getElementById('user-section'), playerHead = document.getElementById('player-head'), usernameEl = document.getElementById('player-name'), leanDesc = document.getElementById('leanDesc');
 const btnHome = document.getElementById('btn-home'), btnAbout = document.getElementById('btn-about'), btnInstances = document.getElementById('btn-instances'), btnSettings = document.getElementById('btn-settings'), homeView = document.getElementById('home-view'), aboutView = document.getElementById('about-view'), instancesView = document.getElementById('instances-view'), createVersionView = document.getElementById('create-version-view'), settingsView = document.getElementById('settings-view');
 
-const globTheme = document.getElementById('global-theme'), globLang = document.getElementById('global-language'), globCloseOnBoot = document.getElementById('global-close-on-boot');
+const globTheme = document.getElementById('global-theme'), globLang = document.getElementById('global-language'), globCloseOnBoot = document.getElementById('global-close-on-boot'), globSimpleMode = document.getElementById('global-simple-mode');
 const setInstanceSelect = document.getElementById('settings-instance-select'), setRam = document.getElementById('set-ram'), setRamSlider = document.getElementById('set-ram-slider'), ramRemainingText = document.getElementById('ram-remaining-text'), setPreset = document.getElementById('set-preset'), setJvm = document.getElementById('set-jvm'), setJavaPath = document.getElementById('set-javapath');
 const toggleAdvancedBtn = document.getElementById('toggle-advanced'), advancedPanel = document.getElementById('advanced-settings-panel'), customArgsContainer = document.getElementById('custom-args-container'), playtimeText = document.getElementById('playtime-text'), playtimeTotalText = document.getElementById('playtime-text-total');
 const cancelLaunchButton = document.getElementById('cancel-launch');
@@ -77,7 +77,7 @@ const i18n = {
         manageAccounts: "Manage Accounts", manageTitle: "Manage Accounts", manageDesc: "All saved accounts are listed below.",
         activeAccount: "Active", removeAccount: "Remove", noAccounts: "No saved Microsoft accounts yet.",
         login: "Log In", back: "Back", pref: "Preferences", lSet: "Launcher Settings",
-        theme: "Theme", lang: "Language", closeOnBoot: "Close Launcher On Boot", iSet: "Instance Settings",
+        theme: "Theme", lang: "Language", closeOnBoot: "Close Launcher On Boot", simpleMode: "Simple Launcher", simpleModeDesc: "Disables animations and glass effects for better performance.", iSet: "Instance Settings",
         config: "Configuring:", play: "Playtime:", ram: "Allocated RAM", ramSub: "Amount of memory for this version.",
         adv: "Show Advanced Options ▼", advHide: "Hide Advanced Options ▲",
         jvm: "JVM Preset", jvmSub: "Garbage collection logic.", java: "Custom Java Path", javaSub: "Leave blank to use bundled Java.",
@@ -97,7 +97,7 @@ const i18n = {
         manageAccounts: "Administrar Cuentas", manageTitle: "Administrar Cuentas", manageDesc: "Todas las cuentas guardadas aparecen abajo.",
         activeAccount: "Activa", removeAccount: "Eliminar", noAccounts: "Todavía no hay cuentas de Microsoft guardadas.",
         login: "Entrar", back: "Volver", pref: "Preferencias", lSet: "Ajustes del Launcher",
-        theme: "Tema", lang: "Idioma", closeOnBoot: "Cerrar launcher al iniciar", iSet: "Ajustes de Instancia",
+        theme: "Tema", lang: "Idioma", closeOnBoot: "Cerrar launcher al iniciar", simpleMode: "Modo Simple", simpleModeDesc: "Desactiva animaciones y efectos glass para mejor rendimiento.", iSet: "Ajustes de Instancia",
         config: "Configurando:", play: "Tiempo de juego:", ram: "RAM Alocada", ramSub: "Cantidad de memoria para esta versión.",
         adv: "Mostrar Avanzadas ▼", advHide: "Ocultar Avanzadas ▲",
         jvm: "Ajuste JVM", jvmSub: "Lógica de coleta de lixo.", java: "Ruta de Java", javaSub: "Deixe em branco para usar o Java embutido.",
@@ -117,7 +117,7 @@ const i18n = {
         manageAccounts: "Gerenciar Contas", manageTitle: "Gerenciar Contas", manageDesc: "Todas as contas salvas aparecem abaixo.",
         activeAccount: "Ativa", removeAccount: "Remover", noAccounts: "Ainda não há contas Microsoft salvas.",
         login: "Entrar", back: "Voltar", pref: "Preferências", lSet: "Config. do Launcher",
-        theme: "Tema", lang: "Idioma", closeOnBoot: "Fechar launcher ao iniciar", iSet: "Config. da Instância",
+        theme: "Tema", lang: "Idioma", closeOnBoot: "Fechar launcher ao iniciar", simpleMode: "Modo Simples", simpleModeDesc: "Desativa animações e efeitos glass para melhor desempenho.", iSet: "Config. da Instância",
         config: "Configurando:", play: "Tempo de jogo:", ram: "RAM Alocada", ramSub: "Quantidade de memória para esta versão.",
         adv: "Mostrar Avançadas ▼", advHide: "Ocultar Avançadas ▲",
         jvm: "Ajuste JVM", jvmSub: "Lógica de coleta de lixo.", java: "Caminho do Java", javaSub: "Deixe em branco para usar o Java embutido.",
@@ -151,6 +151,15 @@ async function loadGlobalSettings() {
     globLang.value = g.language || 'en';
     globLang.dispatchEvent(new Event('change'));
     if (globCloseOnBoot) globCloseOnBoot.checked = Boolean(g.closeOnBoot);
+    if (globSimpleMode) {
+        globSimpleMode.checked = Boolean(g.simpleMode);
+        if (g.simpleMode) {
+            document.documentElement.setAttribute('data-simple', 'true');
+            stopBubbles();
+        } else {
+            document.documentElement.removeAttribute('data-simple');
+        }
+    }
     document.documentElement.setAttribute('data-theme', globTheme.value);
     applyTranslations();
 }
@@ -160,9 +169,17 @@ function saveGlobalSettings() {
     const g = {
         theme: globTheme.value,
         language: globLang.value,
-        closeOnBoot: Boolean(globCloseOnBoot?.checked)
+        closeOnBoot: Boolean(globCloseOnBoot?.checked),
+        simpleMode: Boolean(globSimpleMode?.checked)
     };
     document.documentElement.setAttribute('data-theme', g.theme);
+    if (g.simpleMode) {
+        document.documentElement.setAttribute('data-simple', 'true');
+        stopBubbles();
+    } else {
+        document.documentElement.removeAttribute('data-simple');
+        startBubbles();
+    }
     applyTranslations();
     ipcRenderer.invoke('save-global-settings', g);
 }
@@ -818,6 +835,7 @@ async function initUI() {
         }
         renderAuthAccounts(authAccountsState);
         const memoryInfo = await ipcRenderer.invoke('get-system-memory');
+    globSimpleMode?.addEventListener('change', saveGlobalSettings);
         totalSystemRamMb = Number(memoryInfo?.totalMb) || null;
     }
     await loadInstanceSettings();
@@ -1785,25 +1803,46 @@ async function initUI() {
         });
     }
 
-    // Bubble animation — GPU-friendly: minimal DOM writes, no blur filter, frame-skipped
-    const MAX_BUBBLES = 10;
-    const SPAWN_INTERVAL_MS = 400;
-    const SAFE = 100;
+    // Bubble animation — Canvas-based: zero DOM manipulation, single GPU texture
+    const MAX_BUBBLES = 12;
+    const SPAWN_INTERVAL_MS = 380;
+    const SAFE = 80;
     const ATTR_RADIUS = 200;
     const ATTR_FORCE = 0.02;
     const ATTR_RADIUS_SQ = ATTR_RADIUS * ATTR_RADIUS;
 
+    const canvas = document.createElement('canvas');
+    canvas.style.position = 'fixed';
+    canvas.style.inset = '0';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = '0';
+    layer.appendChild(canvas);
+
+    // Remove old DOM bubble elements if any exist
+    layer.querySelectorAll('.bubble').forEach(el => el.remove());
+
+    const ctx = canvas.getContext('2d');
+    const bubbles = [];
+    const perfNow = () => performance.now();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
     let vw = window.innerWidth;
     let vh = window.innerHeight;
-    
-    window.addEventListener('resize', () => {
+
+    function resizeCanvas() {
         vw = window.innerWidth;
         vh = window.innerHeight;
-    }, { passive: true });
+        const cw = Math.round(vw * dpr);
+        const ch = Math.round(vh * dpr);
+        canvas.width = cw;
+        canvas.height = ch;
+        canvas.style.width = vw + 'px';
+        canvas.style.height = vh + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    resizeCanvas();
 
-    const pool = [];
-    const active = [];
-    const now = () => Date.now();
+    window.addEventListener('resize', resizeCanvas, { passive: true });
 
     const mouse = { x: -9999, y: -9999 };
     let pointerDirty = false;
@@ -1813,83 +1852,57 @@ async function initUI() {
         pointerDirty = true;
     }, { passive: true });
 
-    function createEl() {
-        const el = document.createElement('div');
-        el.className = 'bubble';
-        el.style.position = 'absolute';
-        el.style.left = '0';
-        el.style.top = '0';
-        layer.appendChild(el);
-        return el;
-    }
-
-    for (let i = 0; i < MAX_BUBBLES; i++) {
-        pool.push({
-            el: createEl(),
-            active: false,
-            size: 0,
-            x: 0,
-            y: 0,
-            opacity: 0,
-            speed: 0,
-            created: 0,
+    function createBubble(prefill) {
+        const size = 160 + Math.random() * 300;
+        return {
+            size,
+            x: SAFE + Math.random() * Math.max(vw - 2 * SAFE - size, 0),
+            y: prefill ? Math.random() * vh : vh + 100 + Math.random() * 200,
+            opacity: prefill ? 0.15 : 0,
+            speed: 0.3 + Math.random() * 0.4,
             attractionTime: 0
-        });
+        };
     }
 
-    let lastSpawn = 0;
-    function spawn(prefill = false, recycledItem = null) {
-        const item = recycledItem || pool.find(p => !p.active);
-        if (!item) return null;
-        item.active = true;
-        if (!recycledItem) {
-            item.size = 180 + Math.random() * 320;
-            const s = Math.round(item.size);
-            item.el.style.width = item.el.style.height = `${s}px`;
-        }
-        const s = Math.round(item.size);
-        const maxX = Math.max(vw - 2 * SAFE - item.size, 0);
-        item.x = SAFE + Math.random() * maxX;
-        item.y = prefill ? Math.random() * vh : vh + 100 + Math.random() * 200;
-        item.opacity = prefill ? 0.15 : 0;
-        item.speed = 0.3 + Math.random() * 0.4;
-        item.created = now();
-        item.attractionTime = 0;
-        item.el.style.opacity = item.opacity;
-        item.el.style.transform = `translate3d(${Math.round(item.x)}px, ${Math.round(item.y)}px, 0)`;
-        if (!recycledItem) active.push(item);
-        return item;
-    }
+    for (let i = 0; i < MAX_BUBBLES; i++) bubbles.push(createBubble(true));
 
-    for (let i = 0; i < 10; i++) spawn(true);
+    function drawBubble(b) {
+        const r = b.size / 2;
+        const cx = b.x + r;
+        const cy = b.y + r;
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        const style = getComputedStyle(document.documentElement);
+        const bubbleColor = style.getPropertyValue('--bubble').trim() || 'rgba(139,92,246,0.12)';
+        grad.addColorStop(0, bubbleColor);
+        grad.addColorStop(0.7, 'transparent');
+        ctx.globalAlpha = b.opacity;
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
 
     const CURSOR_PUSH_TIMEOUT = 5000;
-    let frameSkip = 0;
+    let lastSpawn = 0;
+    let animId = null;
 
-    function updateBubbles() {
-        // Frame-skip: only process every 2nd vsync to stay under 16ms budget
-        frameSkip = (frameSkip + 1) % 2;
-        if (frameSkip !== 0) {
-            requestAnimationFrame(updateBubbles);
-            return;
-        }
+    function updateBubblesCanvas() {
+        const tNow = perfNow();
 
-        const tNow = now();
-
-        // Spawn new bubbles at a relaxed rate
-        if (active.length < MAX_BUBBLES && (tNow - lastSpawn) > SPAWN_INTERVAL_MS) {
-            spawn();
+        if (bubbles.length < MAX_BUBBLES && (tNow - lastSpawn) > SPAWN_INTERVAL_MS) {
+            bubbles.push(createBubble(false));
             lastSpawn = tNow;
         }
 
         const localMouse = pointerDirty ? { x: mouse.x, y: mouse.y } : mouse;
         pointerDirty = false;
 
-        for (let i = active.length - 1; i >= 0; i--) {
-            const b = active[i];
+        ctx.clearRect(0, 0, vw, vh);
+
+        for (let i = bubbles.length - 1; i >= 0; i--) {
+            const b = bubbles[i];
             b.y -= b.speed;
 
-            // Squared-distance mouse attraction (avoids expensive Math.hypot/sqrt)
             const cx = b.x + b.size / 2;
             const cy = b.y + b.size / 2;
             const dx = localMouse.x - cx;
@@ -1898,13 +1911,10 @@ async function initUI() {
 
             if (dSq > 0 && dSq < ATTR_RADIUS_SQ) {
                 b.attractionTime += 16;
-                const DETACH_WINDOW = 1000;
                 const overTime = b.attractionTime - CURSOR_PUSH_TIMEOUT;
-                const stickiness = overTime > 0
-                    ? Math.max(0, 1 - overTime / DETACH_WINDOW)
-                    : 1;
+                const stickiness = overTime > 0 ? Math.max(0, 1 - overTime / 1000) : 1;
                 if (stickiness > 0) {
-                    const d = Math.sqrt(dSq); // only sqrt when actually applying force
+                    const d = Math.sqrt(dSq);
                     const f = (1 - (d / ATTR_RADIUS)) * ATTR_FORCE * stickiness;
                     b.x += dx * f;
                     b.y += dy * f;
@@ -1912,7 +1922,6 @@ async function initUI() {
                         b.x = localMouse.x - b.size / 2;
                         b.y = localMouse.y - b.size / 2;
                     }
-                    b._dirty = true;
                 }
             } else {
                 b.attractionTime = Math.max(0, b.attractionTime - 32);
@@ -1920,31 +1929,35 @@ async function initUI() {
 
             b.x = Math.max(SAFE, Math.min(vw - b.size - SAFE, b.x));
 
-            // Edge fade
-            const newOpacity = (b.y > vh - 160 || b.y < 160)
+            b.opacity = (b.y > vh - 160 || b.y < 160)
                 ? Math.max(0, b.opacity - 0.03)
                 : Math.min(1, b.opacity + 0.03);
 
-            // Only write to DOM when values actually changed (dirty-check)
-            if (b._dirty || Math.abs(b.opacity - newOpacity) > 0.005) {
-                b.opacity = newOpacity;
-                b.el.style.opacity = b.opacity;
-                b._dirty = false;
-            }
-            if (b._dirty || b._lastX !== Math.round(b.x) || b._lastY !== Math.round(b.y)) {
-                b._lastX = Math.round(b.x);
-                b._lastY = Math.round(b.y);
-                b.el.style.transform = `translate3d(${b._lastX}px, ${b._lastY}px, 0)`;
-            }
+            drawBubble(b);
 
-            // Recycle bubble that left the top
             if (b.y + b.size < -50) {
-                spawn(false, b);
+                bubbles[i] = createBubble(false);
             }
         }
-        requestAnimationFrame(updateBubbles);
+
+        animId = requestAnimationFrame(updateBubblesCanvas);
     }
-    requestAnimationFrame(updateBubbles);
+
+    function startBubbles() {
+        if (animId) return;
+        animId = requestAnimationFrame(updateBubblesCanvas);
+    }
+
+    function stopBubbles() {
+        if (animId) {
+            cancelAnimationFrame(animId);
+            animId = null;
+        }
+        ctx.clearRect(0, 0, vw, vh);
+    }
+
+    // Start if not in simple mode
+    if (!document.documentElement.hasAttribute('data-simple')) startBubbles();
 
     // --- Auto-update event listeners ---
     if (typeof window.updateAPI !== 'undefined') {
