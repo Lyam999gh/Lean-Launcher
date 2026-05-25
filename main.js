@@ -35,11 +35,10 @@ function copyDirectoryContentsRecursive(sourceDir, targetDir) {
 
 function createWindow() {
   const iconPath = path.join(__dirname, 'icon.png');
-  win = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 950, height: 700,
     minWidth: 900, minHeight: 650,
     frame: false,
-    backgroundColor: '#0a0e17',
     icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
@@ -385,7 +384,7 @@ ipcMain.on('restart-and-install', () => {
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
-app.commandLine.appendSwitch('disable-gpu-vsync');
+app.commandLine.appendSwitch('use-angle', 'gl');
 app.commandLine.appendSwitch('enable-features', 'UseSkiaRenderer');
 
 app.whenReady().then(() => {
