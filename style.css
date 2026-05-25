@@ -167,12 +167,12 @@ body {
     top: 0;
     left: 0;
     border-radius: 50%;
-    background: var(--bubble);
-    filter: blur(35px);
+    background: radial-gradient(circle at center, var(--bubble) 0%, transparent 70%);
     transition: background 0.4s ease;
     opacity: 0;
     pointer-events: none;
     will-change: transform, opacity;
+    contain: layout style paint;
 }
 
 #content {
@@ -325,6 +325,8 @@ body {
     transition: 0.2s;
     pointer-events: none;
     z-index: 2;
+    object-fit: cover;
+    flex-shrink: 0;
 }
 
 .username {
@@ -1542,7 +1544,8 @@ select {
 }
 
 .settings-scroll-area {
-    overflow-y: scroll;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
     padding-right: 15px;
     flex-grow: 1;
 }
@@ -1556,6 +1559,10 @@ select {
 ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
+}
+
+::-webkit-scrollbar-button {
+    display: none;
 }
 
 ::-webkit-scrollbar-track {
@@ -2486,13 +2493,11 @@ select {
     left: 0;
     right: 0;
     bottom: 0;
-    background: var(--panel-bg);
-    backdrop-filter: blur(12px) saturate(120%) brightness(1);
-    -webkit-backdrop-filter: blur(12px) saturate(120%) brightness(1);
+    background: rgba(128, 128, 128, 0.2);
     border-radius: 999px;
-    transition: .24s ease;
+    transition: background .24s ease, border-color .24s ease;
     border: 1px solid var(--panel-border);
-    box-shadow: var(--panel-shadow);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .slider:before {
@@ -2501,13 +2506,13 @@ select {
     height: 22px;
     width: 22px;
     left: 4px;
-    bottom: 3px;
+    top: 50%;
     background: linear-gradient(180deg, #ffffff, #f0f0f0);
     border-radius: 50%;
     transition: transform .24s ease, background .24s ease;
     box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
     z-index: 2;
-    transform: translateX(0);
+    transform: translateX(0) translateY(-50%);
 }
 
 input:checked+.slider {
@@ -2516,7 +2521,7 @@ input:checked+.slider {
 }
 
 input:checked+.slider:before {
-    transform: translateX(24px);
+    transform: translateX(24px) translateY(-50%);
     background: white;
 }
 

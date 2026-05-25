@@ -34,7 +34,7 @@
       "output": "dist"
     },
     "icon": "icon.png",
-    "asar": false,
+    "asar": true,
     "files": [
       "main.js",
       "preload.js",

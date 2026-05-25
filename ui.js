@@ -1785,12 +1785,13 @@ async function initUI() {
         });
     }
 
-    // Bubble animation
-    const MAX_BUBBLES = 25;
-    const SPAWN_INTERVAL_MS = 320;
-    const SAFE = 130;
-    const ATTR_RADIUS = 240;
-    const ATTR_FORCE = 0.025;
+    // Bubble animation — GPU-friendly: minimal DOM writes, no blur filter, frame-skipped
+    const MAX_BUBBLES = 10;
+    const SPAWN_INTERVAL_MS = 400;
+    const SAFE = 100;
+    const ATTR_RADIUS = 200;
+    const ATTR_FORCE = 0.02;
+    const ATTR_RADIUS_SQ = ATTR_RADIUS * ATTR_RADIUS;
 
     let vw = window.innerWidth;
     let vh = window.innerHeight;
@@ -1860,69 +1861,83 @@ async function initUI() {
         return item;
     }
 
-    for (let i = 0; i < 15; i++) spawn(true);
+    for (let i = 0; i < 10; i++) spawn(true);
 
-    const CURSOR_PUSH_TIMEOUT = 5000; // ms before attraction begins fading
+    const CURSOR_PUSH_TIMEOUT = 5000;
+    let frameSkip = 0;
 
     function updateBubbles() {
+        // Frame-skip: only process every 2nd vsync to stay under 16ms budget
+        frameSkip = (frameSkip + 1) % 2;
+        if (frameSkip !== 0) {
+            requestAnimationFrame(updateBubbles);
+            return;
+        }
+
         const tNow = now();
-        
-        // Always keep MAX_BUBBLES active — spawn immediately if below cap
+
+        // Spawn new bubbles at a relaxed rate
         if (active.length < MAX_BUBBLES && (tNow - lastSpawn) > SPAWN_INTERVAL_MS) {
             spawn();
             lastSpawn = tNow;
         }
-        
+
         const localMouse = pointerDirty ? { x: mouse.x, y: mouse.y } : mouse;
         pointerDirty = false;
 
         for (let i = active.length - 1; i >= 0; i--) {
             const b = active[i];
             b.y -= b.speed;
-            
+
+            // Squared-distance mouse attraction (avoids expensive Math.hypot/sqrt)
             const cx = b.x + b.size / 2;
             const cy = b.y + b.size / 2;
             const dx = localMouse.x - cx;
             const dy = localMouse.y - cy;
-            const d = Math.hypot(dx, dy);
+            const dSq = dx * dx + dy * dy;
 
-            if (d > 0 && d < ATTR_RADIUS) {
-                b.attractionTime += 16; // ~1 frame at 60fps
-                // Stickiness: 1.0 normally, fades to 0 over 1s after timeout
+            if (dSq > 0 && dSq < ATTR_RADIUS_SQ) {
+                b.attractionTime += 16;
                 const DETACH_WINDOW = 1000;
                 const overTime = b.attractionTime - CURSOR_PUSH_TIMEOUT;
                 const stickiness = overTime > 0
                     ? Math.max(0, 1 - overTime / DETACH_WINDOW)
                     : 1;
                 if (stickiness > 0) {
+                    const d = Math.sqrt(dSq); // only sqrt when actually applying force
                     const f = (1 - (d / ATTR_RADIUS)) * ATTR_FORCE * stickiness;
                     b.x += dx * f;
                     b.y += dy * f;
-                    // Snap center to cursor when close enough
                     if (d < 3) {
                         b.x = localMouse.x - b.size / 2;
                         b.y = localMouse.y - b.size / 2;
                     }
+                    b._dirty = true;
                 }
-                // Once stickiness reaches 0, bubble drifts naturally — no force applied
             } else {
-                // Reset timer when cursor moves away
                 b.attractionTime = Math.max(0, b.attractionTime - 32);
             }
 
             b.x = Math.max(SAFE, Math.min(vw - b.size - SAFE, b.x));
 
-            // Fade near top/bottom edges
-            if (b.y > vh - 160 || b.y < 160) {
-                b.opacity = Math.max(0, b.opacity - 0.03);
-            } else {
-                b.opacity = Math.min(1, b.opacity + 0.03);
+            // Edge fade
+            const newOpacity = (b.y > vh - 160 || b.y < 160)
+                ? Math.max(0, b.opacity - 0.03)
+                : Math.min(1, b.opacity + 0.03);
+
+            // Only write to DOM when values actually changed (dirty-check)
+            if (b._dirty || Math.abs(b.opacity - newOpacity) > 0.005) {
+                b.opacity = newOpacity;
+                b.el.style.opacity = b.opacity;
+                b._dirty = false;
+            }
+            if (b._dirty || b._lastX !== Math.round(b.x) || b._lastY !== Math.round(b.y)) {
+                b._lastX = Math.round(b.x);
+                b._lastY = Math.round(b.y);
+                b.el.style.transform = `translate3d(${b._lastX}px, ${b._lastY}px, 0)`;
             }
 
-            b.el.style.transform = `translate3d(${Math.round(b.x)}px, ${Math.round(b.y)}px, 0)`;
-            b.el.style.opacity = b.opacity;
-
-            // Instantly recycle bubble that has left the top of the screen
+            // Recycle bubble that left the top
             if (b.y + b.size < -50) {
                 spawn(false, b);
             }
