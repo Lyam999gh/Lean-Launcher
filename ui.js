@@ -1678,16 +1678,32 @@ async function initUI() {
         return null; // all clear
     }
 
+    // 3D tilt — throttled to once per frame, cached rect, no forced layout
+    let tiltRafId = null;
+    let pendingTiltEvent = null;
+
     launchGroup?.addEventListener('mousemove', (event) => {
-        if(!isSignedIn) return;
-        launchGroup.style.transition = 'transform 0.1s ease-out, background 0.32s ease';
-        const rect = launchGroup.getBoundingClientRect();
-        const x = event.clientX - rect.left - rect.width / 2;
-        const y = event.clientY - rect.top - rect.height / 2;
-        launchGroup.style.transform = `perspective(1200px) rotateX(${-y / 18}deg) rotateY(${x / 18}deg) translateY(-2px)`;
+        if (!isSignedIn) return;
+        pendingTiltEvent = event;
+        if (tiltRafId) return;
+        tiltRafId = requestAnimationFrame(() => {
+            tiltRafId = null;
+            const e = pendingTiltEvent;
+            if (!e) return;
+            pendingTiltEvent = null;
+            if (!launchGroup._cachedRect) {
+                launchGroup._cachedRect = launchGroup.getBoundingClientRect();
+            }
+            const rect = launchGroup._cachedRect;
+            const x = e.clientX - rect.left - rect.width / 2;
+            const y = e.clientY - rect.top - rect.height / 2;
+            launchGroup.style.transform = `perspective(1200px) rotateX(${-y / 18}deg) rotateY(${x / 18}deg) translateY(-2px)`;
+        });
     });
     launchGroup?.addEventListener('mouseleave', () => {
-        launchGroup.style.transition = 'transform 0.45s ease-out, background 0.32s ease';
+        if (tiltRafId) { cancelAnimationFrame(tiltRafId); tiltRafId = null; }
+        pendingTiltEvent = null;
+        launchGroup._cachedRect = null;
         launchGroup.style.transform = 'perspective(1200px) rotateX(0deg) rotateY(0deg) translateY(0px)';
     });
 
