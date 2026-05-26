@@ -4,13 +4,14 @@ const os = require('os');
 const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { loginAccount, getAuthAccounts, setActiveAuthAccount, removeAuthAccount } = require('./index.js');
-let mainWindow = null;
 
-// Force GPU acceleration for canvas 2D and rasterization on Windows
+// --- GPU / DWM compositor fixes (must run before app.whenReady) ---
+app.commandLine.appendSwitch('disable-frame-rate-limit');
+app.commandLine.appendSwitch('disable-gpu-vsync');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-accelerated-2d-canvas');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-zero-copy');
+
+let mainWindow = null;
 
 const appRoot = app.isPackaged ? app.getPath('userData') : __dirname;
 
@@ -50,8 +51,8 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      preload: path.join(__dirname, 'preload.js'),
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      preload: path.join(__dirname, 'preload.js')
     },
   });
   win.loadFile(path.join(__dirname, 'index.html'));
@@ -72,8 +73,6 @@ function showOrCreateMainWindow() {
   mainWindow.focus();
   return mainWindow;
 }
-
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
 ipcMain.handle('login-account', async () => {
   try { return { success: true, result: await loginAccount() }; }
@@ -386,13 +385,6 @@ function setupAutoUpdater(win) {
 ipcMain.on('restart-and-install', () => {
   autoUpdater.quitAndInstall(false, true);
 });
-
-// GPU acceleration — fixes low framerate on Windows
-app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
-app.commandLine.appendSwitch('use-angle', 'gl');
-app.commandLine.appendSwitch('enable-features', 'UseSkiaRenderer');
 
 app.whenReady().then(() => {
   const win = createWindow();

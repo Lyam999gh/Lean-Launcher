@@ -677,7 +677,7 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
         try {
             javaPath = execSync('which java 2>/dev/null || echo /usr/bin/java', { encoding: 'utf-8' }).trim();
         } catch { javaPath = '/usr/bin/java'; }
-        if (!fs.existsSync(javaPath)) {
+        if (!fs.existsSync(javaPath) && process.platform !== 'win32') {
             try { javaPath = execSync('find /usr/lib/jvm -name java -type f 2>/dev/null | head -1', { encoding: 'utf-8', shell: true }).trim(); } catch {}
         }
     }
@@ -812,7 +812,7 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
     if (cancelInterval) clearInterval(cancelInterval);
     cancelInterval = setInterval(() => {
         if (cancelRequested && launcher?.process) {
-            try { launcher.process.kill('SIGKILL'); } catch(e){}
+            try { launcher.process.kill(process.platform === 'win32' ? 'SIGTERM' : 'SIGKILL'); } catch(e){}
             clearInterval(cancelInterval);
         }
     }, 200);
@@ -940,7 +940,9 @@ function checkSession() {
 
 function cancelLaunchProcess() {
     cancelRequested = true;
-    if (launcher && launcher.process) { try { launcher.process.kill('SIGKILL'); } catch(e){} }
+    if (launcher && launcher.process) {
+        try { launcher.process.kill(process.platform === 'win32' ? 'SIGTERM' : 'SIGKILL'); } catch(e){}
+    }
 }
 
 module.exports = { startLeanClient, loginAccount, loginOffline, checkSession, cancelLaunchProcess, loadSettings, saveSettings, getInstanceSettings, getGlobalSettings, saveGlobalSettings, getAuthAccounts, setActiveAuthAccount, removeAuthAccount };

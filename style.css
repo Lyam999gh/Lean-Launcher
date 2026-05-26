@@ -167,12 +167,12 @@ body {
     top: 0;
     left: 0;
     border-radius: 50%;
-    background: radial-gradient(circle at center, var(--bubble) 0%, transparent 70%);
+    background: var(--bubble);
+    filter: blur(35px);
     transition: background 0.4s ease;
     opacity: 0;
     pointer-events: none;
     will-change: transform, opacity;
-    contain: layout style paint;
 }
 
 #content {
@@ -325,8 +325,6 @@ body {
     transition: 0.2s;
     pointer-events: none;
     z-index: 2;
-    object-fit: cover;
-    flex-shrink: 0;
 }
 
 .username {
@@ -1000,6 +998,8 @@ body {
     opacity: 0;
     pointer-events: none;
     will-change: transform, opacity;
+    backface-visibility: hidden;
+    transform: translateZ(0);
 }
 
 .page-view.active-page {
@@ -2553,7 +2553,7 @@ select {
     border-radius: 999px;
     transition: background .24s ease, border-color .24s ease;
     border: 1px solid var(--panel-border);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    box-shadow: none;
 }
 
 .slider:before {
@@ -2563,10 +2563,12 @@ select {
     width: 22px;
     left: 4px;
     top: 50%;
-    background: linear-gradient(180deg, #ffffff, #f0f0f0);
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
     border-radius: 50%;
     transition: transform .24s ease, background .24s ease;
-    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
     z-index: 2;
     transform: translateX(0) translateY(-50%);
 }
@@ -2578,7 +2580,7 @@ input:checked+.slider {
 
 input:checked+.slider:before {
     transform: translateX(24px) translateY(-50%);
-    background: white;
+    background: rgba(255, 255, 255, 0.85);
 }
 
 .badge {
@@ -2799,7 +2801,7 @@ input:checked+.slider:before {
     pointer-events: none;
 }
 
-/* --- Simple Launcher Mode: blanket kill-switch for all GPU-heavy effects --- */
+/* --- Simple Launcher Mode --- */
 [data-simple="true"] *,
 [data-simple="true"] *::before,
 [data-simple="true"] *::after {
@@ -2825,10 +2827,5 @@ input:checked+.slider:before {
 [data-simple="true"] .nav-links::after,
 [data-simple="true"] .window-controls::before,
 [data-simple="true"] .window-controls::after {
-    display: none !important;
-}
-
-[data-simple="true"] #bubbleLayer,
-[data-simple="true"] .bubble {
     display: none !important;
 }

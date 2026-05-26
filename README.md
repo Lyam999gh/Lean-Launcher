@@ -4,7 +4,7 @@ A sleek, modern Minecraft launcher built with Electron. Launch optimized modpack
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platforms">
-  <img src="https://img.shields.io/badge/electron-26.0.0-8b5cf6" alt="Electron">
+  <img src="https://img.shields.io/badge/electron-42.2.0-8b5cf6" alt="Electron">
   <img src="https://img.shields.io/badge/license-ISC-green" alt="License">
 </p>
 
