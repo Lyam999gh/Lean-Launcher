@@ -2799,23 +2799,21 @@ input:checked+.slider:before {
     pointer-events: none;
 }
 
-/* --- Simple Launcher Mode: strip glass effects & animations --- */
+/* --- Simple Launcher Mode: blanket kill-switch for all GPU-heavy effects --- */
+[data-simple="true"] *,
+[data-simple="true"] *::before,
+[data-simple="true"] *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+    animation: none !important;
+}
+
 [data-simple="true"] .user-section,
 [data-simple="true"] .nav-links,
 [data-simple="true"] .window-controls,
 [data-simple="true"] .glass-panel,
-[data-simple="true"] .win-btn,
-[data-simple="true"] .dropdown-ui,
-[data-simple="true"] .slider,
-[data-simple="true"] input,
-[data-simple="true"] button:not(.nav-btn):not(.win-btn),
-[data-simple="true"] .auth-account-card,
-[data-simple="true"] .crash-report-content,
-[data-simple="true"] .file-editor-content,
-[data-simple="true"] .modal-content,
-[data-simple="true"] .update-modal-content {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+[data-simple="true"] .win-btn {
     box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important;
 }
 
@@ -2828,13 +2826,6 @@ input:checked+.slider:before {
 [data-simple="true"] .window-controls::before,
 [data-simple="true"] .window-controls::after {
     display: none !important;
-}
-
-[data-simple="true"] *,
-[data-simple="true"] *::before,
-[data-simple="true"] *::after {
-    transition: none !important;
-    animation: none !important;
 }
 
 [data-simple="true"] #bubbleLayer,

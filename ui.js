@@ -1821,13 +1821,48 @@ async function initUI() {
     // Remove old DOM bubble elements if any exist
     layer.querySelectorAll('.bubble').forEach(el => el.remove());
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
     const bubbles = [];
     const perfNow = () => performance.now();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     let vw = window.innerWidth;
     let vh = window.innerHeight;
+    let bubbleColor = 'rgba(139,92,246,0.12)';
+    let bgColor = '#f5f5f7';
+
+    // Read CSS custom properties once, not per frame
+    function readColors() {
+        const style = getComputedStyle(document.documentElement);
+        const bc = style.getPropertyValue('--bubble').trim();
+        const bg = style.getPropertyValue('--bg').trim();
+        if (bc) bubbleColor = bc;
+        if (bg) bgColor = bg;
+    }
+    readColors();
+
+    // Gradient cache: reuse gradients by size bucket, rebuilt only on theme change
+    const gradCache = new Map();
+    function getGradient(cx, cy, r) {
+        const key = Math.round(r / 20) * 20;
+        let grad = gradCache.get(key);
+        if (!grad) {
+            grad = ctx.createRadialGradient(0, 0, 0, 0, 0, key);
+            grad.addColorStop(0, bubbleColor);
+            grad.addColorStop(0.7, 'transparent');
+            gradCache.set(key, grad);
+        }
+        grad.x0 = cx; grad.y0 = cy;
+        grad.x1 = cx; grad.y1 = cy;
+        grad.r0 = 0;
+        grad.r1 = r;
+        return grad;
+    }
+
+    function invalidateGradients() {
+        readColors();
+        gradCache.clear();
+    }
 
     function resizeCanvas() {
         vw = window.innerWidth;
@@ -1839,8 +1874,13 @@ async function initUI() {
         canvas.style.width = vw + 'px';
         canvas.style.height = vh + 'px';
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        invalidateGradients();
     }
     resizeCanvas();
+
+    // Rebuild gradients when theme changes (--bubble color switches)
+    const themeObserver = new MutationObserver(() => invalidateGradients());
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     window.addEventListener('resize', resizeCanvas, { passive: true });
 
@@ -1866,22 +1906,6 @@ async function initUI() {
 
     for (let i = 0; i < MAX_BUBBLES; i++) bubbles.push(createBubble(true));
 
-    function drawBubble(b) {
-        const r = b.size / 2;
-        const cx = b.x + r;
-        const cy = b.y + r;
-        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-        const style = getComputedStyle(document.documentElement);
-        const bubbleColor = style.getPropertyValue('--bubble').trim() || 'rgba(139,92,246,0.12)';
-        grad.addColorStop(0, bubbleColor);
-        grad.addColorStop(0.7, 'transparent');
-        ctx.globalAlpha = b.opacity;
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
     const CURSOR_PUSH_TIMEOUT = 5000;
     let lastSpawn = 0;
     let animId = null;
@@ -1897,7 +1921,8 @@ async function initUI() {
         const localMouse = pointerDirty ? { x: mouse.x, y: mouse.y } : mouse;
         pointerDirty = false;
 
-        ctx.clearRect(0, 0, vw, vh);
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, vw, vh);
 
         for (let i = bubbles.length - 1; i >= 0; i--) {
             const b = bubbles[i];
@@ -1933,7 +1958,13 @@ async function initUI() {
                 ? Math.max(0, b.opacity - 0.03)
                 : Math.min(1, b.opacity + 0.03);
 
-            drawBubble(b);
+            // Draw inline with cached gradient — zero allocations, zero style reads
+            const r = b.size / 2;
+            ctx.globalAlpha = b.opacity;
+            ctx.fillStyle = getGradient(cx, cy, r);
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fill();
 
             if (b.y + b.size < -50) {
                 bubbles[i] = createBubble(false);
@@ -1953,7 +1984,8 @@ async function initUI() {
             cancelAnimationFrame(animId);
             animId = null;
         }
-        ctx.clearRect(0, 0, vw, vh);
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, vw, vh);
     }
 
     // Start if not in simple mode
