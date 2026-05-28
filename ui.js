@@ -77,7 +77,7 @@ const i18n = {
         manageAccounts: "Manage Accounts", manageTitle: "Manage Accounts", manageDesc: "All saved accounts are listed below.",
         activeAccount: "Active", removeAccount: "Remove", noAccounts: "No saved Microsoft accounts yet.",
         login: "Log In", back: "Back", pref: "Preferences", lSet: "Launcher Settings",
-        theme: "Theme", lang: "Language", closeOnBoot: "Close Launcher On Boot", closeOnBootDesc: "Hides the launcher window when Minecraft starts.", simpleMode: "Simple Launcher", simpleModeDesc: "Disables animations and glass effects for better performance.", iSet: "Instance Settings",
+        theme: "Theme", lang: "Language", closeOnBoot: "Close Launcher On Boot", simpleMode: "Simple Launcher", simpleModeDesc: "Disables animations and glass effects for better performance.", iSet: "Instance Settings",
         config: "Configuring:", play: "Playtime:", ram: "Allocated RAM", ramSub: "Amount of memory for this version.",
         adv: "Show Advanced Options ▼", advHide: "Hide Advanced Options ▲",
         jvm: "JVM Preset", jvmSub: "Garbage collection logic.", java: "Custom Java Path", javaSub: "Leave blank to use bundled Java.",
@@ -97,7 +97,7 @@ const i18n = {
         manageAccounts: "Administrar Cuentas", manageTitle: "Administrar Cuentas", manageDesc: "Todas las cuentas guardadas aparecen abajo.",
         activeAccount: "Activa", removeAccount: "Eliminar", noAccounts: "Todavía no hay cuentas de Microsoft guardadas.",
         login: "Entrar", back: "Volver", pref: "Preferencias", lSet: "Ajustes del Launcher",
-        theme: "Tema", lang: "Idioma", closeOnBoot: "Cerrar launcher al iniciar", closeOnBootDesc: "Oculta la ventana cuando Minecraft inicia.", simpleMode: "Modo Simple", simpleModeDesc: "Desactiva animaciones y efectos glass para mejor rendimiento.", iSet: "Ajustes de Instancia",
+        theme: "Tema", lang: "Idioma", closeOnBoot: "Cerrar launcher al iniciar", simpleMode: "Modo Simple", simpleModeDesc: "Desactiva animaciones y efectos glass para mejor rendimiento.", iSet: "Ajustes de Instancia",
         config: "Configurando:", play: "Tiempo de juego:", ram: "RAM Alocada", ramSub: "Cantidad de memoria para esta versión.",
         adv: "Mostrar Avanzadas ▼", advHide: "Ocultar Avanzadas ▲",
         jvm: "Ajuste JVM", jvmSub: "Lógica de coleta de lixo.", java: "Ruta de Java", javaSub: "Deixe em branco para usar o Java embutido.",
@@ -117,7 +117,7 @@ const i18n = {
         manageAccounts: "Gerenciar Contas", manageTitle: "Gerenciar Contas", manageDesc: "Todas as contas salvas aparecem abaixo.",
         activeAccount: "Ativa", removeAccount: "Remover", noAccounts: "Ainda não há contas Microsoft salvas.",
         login: "Entrar", back: "Voltar", pref: "Preferências", lSet: "Config. do Launcher",
-        theme: "Tema", lang: "Idioma", closeOnBoot: "Fechar launcher ao iniciar", closeOnBootDesc: "Esconde a janela quando o Minecraft inicia.", simpleMode: "Modo Simples", simpleModeDesc: "Desativa animações e efeitos glass para melhor desempenho.", iSet: "Config. da Instância",
+        theme: "Tema", lang: "Idioma", closeOnBoot: "Fechar launcher ao iniciar", simpleMode: "Modo Simples", simpleModeDesc: "Desativa animações e efeitos glass para melhor desempenho.", iSet: "Config. da Instância",
         config: "Configurando:", play: "Tempo de jogo:", ram: "RAM Alocada", ramSub: "Quantidade de memória para esta versão.",
         adv: "Mostrar Avançadas ▼", advHide: "Ocultar Avançadas ▲",
         jvm: "Ajuste JVM", jvmSub: "Lógica de coleta de lixo.", java: "Caminho do Java", javaSub: "Deixe em branco para usar o Java embutido.",
@@ -155,6 +155,7 @@ async function loadGlobalSettings() {
         globSimpleMode.checked = Boolean(g.simpleMode);
         if (g.simpleMode) {
             document.documentElement.setAttribute('data-simple', 'true');
+            stopBubbles();
         } else {
             document.documentElement.removeAttribute('data-simple');
         }
@@ -174,8 +175,10 @@ function saveGlobalSettings() {
     document.documentElement.setAttribute('data-theme', g.theme);
     if (g.simpleMode) {
         document.documentElement.setAttribute('data-simple', 'true');
+        stopBubbles();
     } else {
         document.documentElement.removeAttribute('data-simple');
+        startBubbles();
     }
     applyTranslations();
     ipcRenderer.invoke('save-global-settings', g);
@@ -832,9 +835,9 @@ async function initUI() {
         }
         renderAuthAccounts(authAccountsState);
         const memoryInfo = await ipcRenderer.invoke('get-system-memory');
+    globSimpleMode?.addEventListener('change', saveGlobalSettings);
         totalSystemRamMb = Number(memoryInfo?.totalMb) || null;
     }
-    globSimpleMode?.addEventListener('change', saveGlobalSettings);
     await loadInstanceSettings();
     await renderOfficialLeanProfileActions();
 
@@ -1675,16 +1678,32 @@ async function initUI() {
         return null; // all clear
     }
 
+    // 3D tilt — throttled to once per frame, cached rect, no forced layout
+    let tiltRafId = null;
+    let pendingTiltEvent = null;
+
     launchGroup?.addEventListener('mousemove', (event) => {
-        if(!isSignedIn) return;
-        launchGroup.style.transition = 'transform 0.1s ease-out, background 0.32s ease';
-        const rect = launchGroup.getBoundingClientRect();
-        const x = event.clientX - rect.left - rect.width / 2;
-        const y = event.clientY - rect.top - rect.height / 2;
-        launchGroup.style.transform = `perspective(1200px) rotateX(${-y / 18}deg) rotateY(${x / 18}deg) translateY(-2px)`;
+        if (!isSignedIn) return;
+        pendingTiltEvent = event;
+        if (tiltRafId) return;
+        tiltRafId = requestAnimationFrame(() => {
+            tiltRafId = null;
+            const e = pendingTiltEvent;
+            if (!e) return;
+            pendingTiltEvent = null;
+            if (!launchGroup._cachedRect) {
+                launchGroup._cachedRect = launchGroup.getBoundingClientRect();
+            }
+            const rect = launchGroup._cachedRect;
+            const x = e.clientX - rect.left - rect.width / 2;
+            const y = e.clientY - rect.top - rect.height / 2;
+            launchGroup.style.transform = `perspective(1200px) rotateX(${-y / 18}deg) rotateY(${x / 18}deg) translateY(-2px)`;
+        });
     });
     launchGroup?.addEventListener('mouseleave', () => {
-        launchGroup.style.transition = 'transform 0.45s ease-out, background 0.32s ease';
+        if (tiltRafId) { cancelAnimationFrame(tiltRafId); tiltRafId = null; }
+        pendingTiltEvent = null;
+        launchGroup._cachedRect = null;
         launchGroup.style.transform = 'perspective(1200px) rotateX(0deg) rotateY(0deg) translateY(0px)';
     });
 
@@ -1800,24 +1819,86 @@ async function initUI() {
         });
     }
 
-    // Bubble animation
-    const MAX_BUBBLES = 140;
-    const SPAWN_INTERVAL_MS = 220;
-    const SAFE = 130;
-    const ATTR_RADIUS = 240;
-    const ATTR_FORCE = 0.04;
+    // Bubble animation — Canvas-based: zero DOM manipulation, single GPU texture
+    const MAX_BUBBLES = 12;
+    const SPAWN_INTERVAL_MS = 380;
+    const SAFE = 80;
+    const ATTR_RADIUS = 200;
+    const ATTR_FORCE = 0.02;
+    const ATTR_RADIUS_SQ = ATTR_RADIUS * ATTR_RADIUS;
+
+    const canvas = document.createElement('canvas');
+    canvas.style.position = 'fixed';
+    canvas.style.inset = '0';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = '0';
+    layer.appendChild(canvas);
+
+    // Remove old DOM bubble elements if any exist
+    layer.querySelectorAll('.bubble').forEach(el => el.remove());
+
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const bubbles = [];
+    const perfNow = () => performance.now();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     let vw = window.innerWidth;
     let vh = window.innerHeight;
-    
-    window.addEventListener('resize', () => {
+    let bubbleColor = 'rgba(139,92,246,0.12)';
+    let bgColor = '#f5f5f7';
+
+    // Read CSS custom properties once, not per frame
+    function readColors() {
+        const style = getComputedStyle(document.documentElement);
+        const bc = style.getPropertyValue('--bubble').trim();
+        const bg = style.getPropertyValue('--bg').trim();
+        if (bc) bubbleColor = bc;
+        if (bg) bgColor = bg;
+    }
+    readColors();
+
+    // Gradient cache: reuse gradients by size bucket, rebuilt only on theme change
+    const gradCache = new Map();
+    function getGradient(cx, cy, r) {
+        const key = Math.round(r / 20) * 20;
+        let grad = gradCache.get(key);
+        if (!grad) {
+            grad = ctx.createRadialGradient(0, 0, 0, 0, 0, key);
+            grad.addColorStop(0, bubbleColor);
+            grad.addColorStop(0.7, 'transparent');
+            gradCache.set(key, grad);
+        }
+        grad.x0 = cx; grad.y0 = cy;
+        grad.x1 = cx; grad.y1 = cy;
+        grad.r0 = 0;
+        grad.r1 = r;
+        return grad;
+    }
+
+    function invalidateGradients() {
+        readColors();
+        gradCache.clear();
+    }
+
+    function resizeCanvas() {
         vw = window.innerWidth;
         vh = window.innerHeight;
-    }, { passive: true });
+        const cw = Math.round(vw * dpr);
+        const ch = Math.round(vh * dpr);
+        canvas.width = cw;
+        canvas.height = ch;
+        canvas.style.width = vw + 'px';
+        canvas.style.height = vh + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        invalidateGradients();
+    }
+    resizeCanvas();
 
-    const pool = [];
-    const active = [];
-    const now = () => Date.now();
+    // Rebuild gradients when theme changes (--bubble color switches)
+    const themeObserver = new MutationObserver(() => invalidateGradients());
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    window.addEventListener('resize', resizeCanvas, { passive: true });
 
     const mouse = { x: -9999, y: -9999 };
     let pointerDirty = false;
@@ -1827,113 +1908,104 @@ async function initUI() {
         pointerDirty = true;
     }, { passive: true });
 
-    function createEl() {
-        const el = document.createElement('div');
-        el.className = 'bubble';
-        el.style.position = 'absolute';
-        el.style.left = '0';
-        el.style.top = '0';
-        el.style.willChange = 'transform,opacity';
-        layer.appendChild(el);
-        return el;
+    function createBubble(prefill) {
+        const size = 160 + Math.random() * 300;
+        return {
+            size,
+            x: SAFE + Math.random() * Math.max(vw - 2 * SAFE - size, 0),
+            y: prefill ? Math.random() * vh : vh + 100 + Math.random() * 200,
+            opacity: prefill ? 0.15 : 0,
+            speed: 0.3 + Math.random() * 0.4,
+            attractionTime: 0
+        };
     }
 
-    for (let i = 0; i < MAX_BUBBLES; i++) {
-        pool.push({
-            el: createEl(),
-            active: false,
-            size: 0,
-            x: 0,
-            y: 0,
-            opacity: 0,
-            speed: 0,
-            created: 0
-        });
-    }
+    for (let i = 0; i < MAX_BUBBLES; i++) bubbles.push(createBubble(true));
 
+    const CURSOR_PUSH_TIMEOUT = 5000;
     let lastSpawn = 0;
-    function spawn(prefill = false) {
-        const item = pool.find(p => !p.active);
-        if (!item) return null;
-        item.active = true;
-        item.size = 90 + Math.random() * 200;
-        const s = Math.round(item.size);
-        item.el.style.width = item.el.style.height = `${s}px`;
-        const maxX = Math.max(vw - 2 * SAFE - item.size, 0);
-        item.x = SAFE + Math.random() * maxX;
-        item.y = prefill ? Math.random() * vh : vh + 100 + Math.random() * 200;
-        item.opacity = prefill ? 1 : 0;
-        item.speed = 0.55 + Math.random() * 0.5;
-        item.created = now();
-        item.el.style.opacity = item.opacity;
-        item.el.style.transform = `translate3d(${Math.round(item.x)}px, ${Math.round(item.y)}px, 0)`;
-        active.push(item);
-        return item;
-    }
+    let animId = null;
 
-    for (let i = 0; i < 80; i++) spawn(true);
+    function updateBubblesCanvas() {
+        const tNow = perfNow();
 
-    let lastFrameTime = now();
-    function updateBubbles() {
-        const tNow = now();
-        const rawDt = tNow - lastFrameTime;
-        lastFrameTime = tNow;
-        // Normalize delta to 60fps baseline (=1.0 at 16.67ms). Clamp to avoid spiral-of-death on tab switch.
-        const dt = Math.min(rawDt / 16.667, 4);
-
-        if (active.length < MAX_BUBBLES && (tNow - lastSpawn) > SPAWN_INTERVAL_MS) {
-            spawn();
+        if (bubbles.length < MAX_BUBBLES && (tNow - lastSpawn) > SPAWN_INTERVAL_MS) {
+            bubbles.push(createBubble(false));
             lastSpawn = tNow;
         }
-        
+
         const localMouse = pointerDirty ? { x: mouse.x, y: mouse.y } : mouse;
         pointerDirty = false;
 
-        for (let i = active.length - 1; i >= 0; i--) {
-            const b = active[i];
-            b.y -= b.speed * dt;
-            
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, vw, vh);
+
+        for (let i = bubbles.length - 1; i >= 0; i--) {
+            const b = bubbles[i];
+            b.y -= b.speed;
+
             const cx = b.x + b.size / 2;
             const cy = b.y + b.size / 2;
             const dx = localMouse.x - cx;
             const dy = localMouse.y - cy;
-            const d = Math.hypot(dx, dy);
+            const dSq = dx * dx + dy * dy;
 
-            if (d > 0 && d < ATTR_RADIUS) {
-                b.attractionTime = (b.attractionTime || 0) + 16 * dt;
-                const CURSOR_PUSH_TIMEOUT = 1800;
+            if (dSq > 0 && dSq < ATTR_RADIUS_SQ) {
+                b.attractionTime += 16;
                 const overTime = b.attractionTime - CURSOR_PUSH_TIMEOUT;
-                const stickiness = overTime > 0 ? Math.max(0, 1 - overTime / 500) : 1;
+                const stickiness = overTime > 0 ? Math.max(0, 1 - overTime / 1000) : 1;
                 if (stickiness > 0) {
-                    const f = (1 - (d / ATTR_RADIUS)) * ATTR_FORCE * stickiness * dt;
+                    const d = Math.sqrt(dSq);
+                    const f = (1 - (d / ATTR_RADIUS)) * ATTR_FORCE * stickiness;
                     b.x += dx * f;
                     b.y += dy * f;
+                    if (d < 3) {
+                        b.x = localMouse.x - b.size / 2;
+                        b.y = localMouse.y - b.size / 2;
+                    }
                 }
             } else {
-                b.attractionTime = Math.max(0, (b.attractionTime || 0) - 32 * dt);
+                b.attractionTime = Math.max(0, b.attractionTime - 32);
             }
 
             b.x = Math.max(SAFE, Math.min(vw - b.size - SAFE, b.x));
 
-            if (b.y > vh - 160 || b.y < 160) {
-                b.opacity = Math.max(0, b.opacity - 0.02 * dt);
-            } else {
-                b.opacity = Math.min(1, b.opacity + 0.02 * dt);
-            }
+            b.opacity = (b.y > vh - 160 || b.y < 160)
+                ? Math.max(0, b.opacity - 0.03)
+                : Math.min(1, b.opacity + 0.03);
 
-            b.el.style.transform = `translate3d(${Math.round(b.x)}px, ${Math.round(b.y)}px, 0)`;
-            b.el.style.opacity = b.opacity;
+            // Draw inline with cached gradient — zero allocations, zero style reads
+            const r = b.size / 2;
+            ctx.globalAlpha = b.opacity;
+            ctx.fillStyle = getGradient(cx, cy, r);
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fill();
 
-            if (b.y < -b.size - 400 && (now() - b.created) > 30000) {
-                b.active = false;
-                b.el.style.opacity = 0;
-                b.el.style.transform = `translate3d(-9999px,-9999px,0)`;
-                active.splice(i, 1);
+            if (b.y + b.size < -50) {
+                bubbles[i] = createBubble(false);
             }
         }
-        requestAnimationFrame(updateBubbles);
+
+        animId = requestAnimationFrame(updateBubblesCanvas);
     }
-    requestAnimationFrame(updateBubbles);
+
+    function startBubbles() {
+        if (animId) return;
+        animId = requestAnimationFrame(updateBubblesCanvas);
+    }
+
+    function stopBubbles() {
+        if (animId) {
+            cancelAnimationFrame(animId);
+            animId = null;
+        }
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, vw, vh);
+    }
+
+    // Start if not in simple mode
+    if (!document.documentElement.hasAttribute('data-simple')) startBubbles();
 
     // --- Auto-update event listeners ---
     if (typeof window.updateAPI !== 'undefined') {
@@ -2008,65 +2080,27 @@ async function initUI() {
             }
         });
     }
-    // --- FPS + GPU Diagnostics overlay (toggle with Ctrl+Shift+G) ---
-    const diagEl = document.createElement('div');
-    diagEl.style.cssText = 'position:fixed;top:4px;right:8px;z-index:99999;font-family:monospace;font-size:11px;color:#0f0;background:rgba(0,0,0,0.82);padding:4px 8px;border-radius:4px;pointer-events:none;line-height:1.5;max-width:320px;';
-    document.body.appendChild(diagEl);
 
-    // Gather GPU info once
-    const gpuInfo = { platform: navigator.platform, userAgent: navigator.userAgent.includes('Windows') ? 'Windows' : navigator.userAgent.includes('Linux') ? 'Linux' : navigator.userAgent.includes('Mac') ? 'macOS' : '?' };
-    try {
-        const canvas = document.createElement('canvas');
-        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-        if (gl) {
-            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-            gpuInfo.renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
-            gpuInfo.vendor   = debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL)   : gl.getParameter(gl.VENDOR);
-        } else {
-            gpuInfo.renderer = 'No WebGL';
+    // --- FPS + stutter diagnostic ---
+    const fpsEl = document.createElement('div');
+    fpsEl.style.cssText = 'position:fixed;top:4px;right:8px;z-index:99999;font-family:monospace;font-size:11px;color:#0f0;background:rgba(0,0,0,0.8);padding:3px 7px;border-radius:4px;pointer-events:none;';
+    document.body.appendChild(fpsEl);
+    const ft = [];
+    let ff = 0, fl = performance.now(), lf = performance.now();
+    (function loop() {
+        const n = performance.now(), d = n - lf; lf = n;
+        ft.push(d); if (ft.length > 120) ft.shift();
+        ff++;
+        if (n - fl >= 500) {
+            const fps = Math.round(ff / ((n - fl) / 1000));
+            const avg = ft.reduce((a,b) => a+b, 0) / ft.length;
+            const v = ft.length > 10 ? Math.round(Math.sqrt(ft.reduce((s,t) => s + (t-avg)*(t-avg), 0) / ft.length) * 10) / 10 : 0;
+            fpsEl.style.color = v < 3 ? '#0f0' : v < 6 ? '#ff0' : '#f44';
+            fpsEl.textContent = `${fps} FPS  stutter:${v}ms`;
+            ff = 0; fl = n;
         }
-    } catch (e) { gpuInfo.renderer = 'WebGL error: ' + e.message; }
-    gpuInfo.availWidth  = screen.availWidth;
-    gpuInfo.availHeight = screen.availHeight;
-    gpuInfo.colorDepth  = screen.colorDepth;
-    gpuInfo.pixelRatio  = window.devicePixelRatio;
-
-    let diagExpanded = false;
-    function renderDiag(fps) {
-        if (!diagExpanded) {
-            diagEl.textContent = `${fps} FPS`;
-            return;
-        }
-        diagEl.innerHTML = [
-            `${fps} FPS`,
-            `Platform: ${gpuInfo.platform} (${gpuInfo.userAgent})`,
-            `GPU: ${gpuInfo.renderer}`,
-            `Vendor: ${gpuInfo.vendor}`,
-            `Screen: ${gpuInfo.availWidth}x${gpuInfo.availHeight} @ ${gpuInfo.pixelRatio}x ${gpuInfo.colorDepth}bit`,
-            `HW Accel: ${gpuInfo.renderer && !gpuInfo.renderer.includes('SwiftShader') && !gpuInfo.renderer.includes('llvmpipe') ? 'YES ✅' : 'NO ❌ (software)'}`
-        ].join('<br>');
-    }
-
-    let fpsFrames = 0, fpsLast = performance.now();
-    function fpsLoop() {
-        fpsFrames++;
-        const now = performance.now();
-        if (now - fpsLast >= 500) {
-            const fps = Math.round(fpsFrames / ((now - fpsLast) / 1000));
-            renderDiag(fps);
-            fpsFrames = 0;
-            fpsLast = now;
-        }
-        requestAnimationFrame(fpsLoop);
-    }
-    requestAnimationFrame(fpsLoop);
-
-    document.addEventListener('keydown', function toggleDiag(e) {
-        if (e.ctrlKey && e.shiftKey && e.key === 'G') {
-            diagExpanded = !diagExpanded;
-            e.preventDefault();
-        }
-    });
+        requestAnimationFrame(loop);
+    })();
 }
 
 document.addEventListener('DOMContentLoaded', initUI);
