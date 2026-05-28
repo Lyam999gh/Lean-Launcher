@@ -5,24 +5,10 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { loginAccount, getAuthAccounts, setActiveAuthAccount, removeAuthAccount } = require('./index.js');
 
-// --- GPU tuning flags (uncomment one at a time to isolate perf issues) ---
-// Base flags — keep these:
-//   (none needed for baseline — Chromium auto-detects)
-
-// Option A: Force GPU even if Chromium blocklists your driver
-// app.commandLine.appendSwitch('ignore-gpu-blocklist');
-
-// Option B: Force GPU raster (helps if software fallback is active)
-// app.commandLine.appendSwitch('enable-gpu-rasterization');
-
-// Option C: Reduce compositor memory pressure
-// app.commandLine.appendSwitch('enable-zero-copy');
-
-// Option D: Disable internal frame cap (use if FPS counter shows low cap)
-// app.commandLine.appendSwitch('disable-frame-rate-limit');
-
-// Option E: Disable GPU VSync (use if above options don't fix stutter)
-// app.commandLine.appendSwitch('disable-gpu-vsync');
+// --- GPU acceleration (safe flags — no stutter, no frame pacing issues) ---
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
 
 let mainWindow = null;
 
