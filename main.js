@@ -6,9 +6,13 @@ const { autoUpdater } = require('electron-updater');
 const { loginAccount, getAuthAccounts, setActiveAuthAccount, removeAuthAccount } = require('./index.js');
 
 // --- GPU / DWM compositor fixes (must run before app.whenReady) ---
+// Removes Chromium's internal frame rate throttling
 app.commandLine.appendSwitch('disable-frame-rate-limit');
-app.commandLine.appendSwitch('disable-gpu-vsync');
+// Ignore Chromium GPU blocklist — critical on Windows where blocklist is aggressive
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// Force GPU rasterization even when blocklist would disable it
 app.commandLine.appendSwitch('enable-gpu-rasterization');
+// Zero-copy texture uploads reduce compositor overhead
 app.commandLine.appendSwitch('enable-zero-copy');
 
 let mainWindow = null;
@@ -46,6 +50,8 @@ function createWindow() {
     width: 950, height: 700,
     minWidth: 900, minHeight: 650,
     frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
     icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
@@ -386,7 +392,13 @@ ipcMain.on('restart-and-install', () => {
   autoUpdater.quitAndInstall(false, true);
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // --- GPU diagnostics (logged on every startup) ---
+  const gpuInfo = await app.getGPUInfo('basic');
+  console.log('[GPU] Hardware acceleration:', gpuInfo?.gpuDevice?.[0]?.active ?? 'unknown');
+  console.log('[GPU] Device:', gpuInfo?.gpuDevice?.[0]?.deviceString ?? 'unknown');
+  console.log('[GPU] Vendor:', gpuInfo?.gpuDevice?.[0]?.vendorString ?? 'unknown');
+
   const win = createWindow();
 
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

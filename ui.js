@@ -2008,6 +2008,65 @@ async function initUI() {
             }
         });
     }
+    // --- FPS + GPU Diagnostics overlay (toggle with Ctrl+Shift+G) ---
+    const diagEl = document.createElement('div');
+    diagEl.style.cssText = 'position:fixed;top:4px;right:8px;z-index:99999;font-family:monospace;font-size:11px;color:#0f0;background:rgba(0,0,0,0.82);padding:4px 8px;border-radius:4px;pointer-events:none;line-height:1.5;max-width:320px;';
+    document.body.appendChild(diagEl);
+
+    // Gather GPU info once
+    const gpuInfo = { platform: navigator.platform, userAgent: navigator.userAgent.includes('Windows') ? 'Windows' : navigator.userAgent.includes('Linux') ? 'Linux' : navigator.userAgent.includes('Mac') ? 'macOS' : '?' };
+    try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        if (gl) {
+            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+            gpuInfo.renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+            gpuInfo.vendor   = debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL)   : gl.getParameter(gl.VENDOR);
+        } else {
+            gpuInfo.renderer = 'No WebGL';
+        }
+    } catch (e) { gpuInfo.renderer = 'WebGL error: ' + e.message; }
+    gpuInfo.availWidth  = screen.availWidth;
+    gpuInfo.availHeight = screen.availHeight;
+    gpuInfo.colorDepth  = screen.colorDepth;
+    gpuInfo.pixelRatio  = window.devicePixelRatio;
+
+    let diagExpanded = false;
+    function renderDiag(fps) {
+        if (!diagExpanded) {
+            diagEl.textContent = `${fps} FPS`;
+            return;
+        }
+        diagEl.innerHTML = [
+            `${fps} FPS`,
+            `Platform: ${gpuInfo.platform} (${gpuInfo.userAgent})`,
+            `GPU: ${gpuInfo.renderer}`,
+            `Vendor: ${gpuInfo.vendor}`,
+            `Screen: ${gpuInfo.availWidth}x${gpuInfo.availHeight} @ ${gpuInfo.pixelRatio}x ${gpuInfo.colorDepth}bit`,
+            `HW Accel: ${gpuInfo.renderer && !gpuInfo.renderer.includes('SwiftShader') && !gpuInfo.renderer.includes('llvmpipe') ? 'YES ✅' : 'NO ❌ (software)'}`
+        ].join('<br>');
+    }
+
+    let fpsFrames = 0, fpsLast = performance.now();
+    function fpsLoop() {
+        fpsFrames++;
+        const now = performance.now();
+        if (now - fpsLast >= 500) {
+            const fps = Math.round(fpsFrames / ((now - fpsLast) / 1000));
+            renderDiag(fps);
+            fpsFrames = 0;
+            fpsLast = now;
+        }
+        requestAnimationFrame(fpsLoop);
+    }
+    requestAnimationFrame(fpsLoop);
+
+    document.addEventListener('keydown', function toggleDiag(e) {
+        if (e.ctrlKey && e.shiftKey && e.key === 'G') {
+            diagExpanded = !diagExpanded;
+            e.preventDefault();
+        }
+    });
 }
 
 document.addEventListener('DOMContentLoaded', initUI);

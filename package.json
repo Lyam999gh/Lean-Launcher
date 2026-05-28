@@ -109,6 +109,9 @@
         }
       ],
       "category": "Game",
+      "desktop": {
+        "Icon": "lean-launcher"
+      },
       "publish": {
         "provider": "github"
       }
