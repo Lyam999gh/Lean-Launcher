@@ -1883,13 +1883,15 @@ async function initUI() {
     function resizeCanvas() {
         vw = window.innerWidth;
         vh = window.innerHeight;
-        const cw = Math.round(vw * dpr);
-        const ch = Math.round(vh * dpr);
-        canvas.width = cw;
-        canvas.height = ch;
-        canvas.style.width = vw + 'px';
+        // Cap internal canvas resolution: 4K at 2x DPR = 33M pixels/frame,
+        // which overwhelms Windows GPU canvas 2D drivers. Linux handles it fine.
+        const MAX_DIM = 2560;
+        const scale = Math.min(1, MAX_DIM / Math.max(vw * dpr, vh * dpr));
+        canvas.width  = Math.round(vw * dpr * scale);
+        canvas.height = Math.round(vh * dpr * scale);
+        canvas.style.width  = vw + 'px';
         canvas.style.height = vh + 'px';
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
         invalidateGradients();
     }
     resizeCanvas();
