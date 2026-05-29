@@ -1857,27 +1857,32 @@ async function initUI() {
     }
     readColors();
 
-    // Gradient cache: reuse gradients by size bucket, rebuilt only on theme change
-    const gradCache = new Map();
-    function getGradient(cx, cy, r) {
+    // Pre-rendered sprite cache: render each bubble size ONCE to an offscreen canvas.
+    // Eliminates 840 GPU gradient state mutations per frame (the Windows 20fps bottleneck).
+    const spriteCache = new Map();
+    function getSprite(r) {
         const key = Math.round(r / 20) * 20;
-        let grad = gradCache.get(key);
-        if (!grad) {
-            grad = ctx.createRadialGradient(0, 0, 0, 0, 0, key);
+        let sprite = spriteCache.get(key);
+        if (!sprite) {
+            const d = key * 2;
+            sprite = document.createElement('canvas');
+            sprite.width = sprite.height = d;
+            const sctx = sprite.getContext('2d');
+            const grad = sctx.createRadialGradient(key, key, 0, key, key, key);
             grad.addColorStop(0, bubbleColor);
             grad.addColorStop(0.7, 'transparent');
-            gradCache.set(key, grad);
+            sctx.fillStyle = grad;
+            sctx.beginPath();
+            sctx.arc(key, key, key, 0, Math.PI * 2);
+            sctx.fill();
+            spriteCache.set(key, sprite);
         }
-        grad.x0 = cx; grad.y0 = cy;
-        grad.x1 = cx; grad.y1 = cy;
-        grad.r0 = 0;
-        grad.r1 = r;
-        return grad;
+        return sprite;
     }
 
-    function invalidateGradients() {
+    function invalidateSprites() {
         readColors();
-        gradCache.clear();
+        spriteCache.clear();
     }
 
     function resizeCanvas() {
@@ -1892,12 +1897,12 @@ async function initUI() {
         canvas.style.width  = vw + 'px';
         canvas.style.height = vh + 'px';
         ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
-        invalidateGradients();
+        invalidateSprites();
     }
     resizeCanvas();
 
     // Rebuild gradients when theme changes (--bubble color switches)
-    const themeObserver = new MutationObserver(() => invalidateGradients());
+    const themeObserver = new MutationObserver(() => invalidateSprites());
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     window.addEventListener('resize', resizeCanvas, { passive: true });
@@ -1976,13 +1981,10 @@ async function initUI() {
                 ? Math.max(0, b.opacity - 0.03)
                 : Math.min(1, b.opacity + 0.03);
 
-            // Draw inline with cached gradient — zero allocations, zero style reads
+            // Draw with pre-rendered sprite — single GPU texture blit, zero gradient mutations
             const r = b.size / 2;
             ctx.globalAlpha = b.opacity;
-            ctx.fillStyle = getGradient(cx, cy, r);
-            ctx.beginPath();
-            ctx.arc(cx, cy, r, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.drawImage(getSprite(r), cx - r, cy - r, b.size, b.size);
 
             if (b.y + b.size < -50) {
                 bubbles[i] = createBubble(false);
