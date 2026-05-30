@@ -424,16 +424,24 @@ async function renderOfficialLeanProfileActions() {
     }
 }
 
+// Cached total playtime — only recomputed when a game session ends (via launch-update handler)
+let cachedTotalPlaytimeMs = null;
+
 async function loadInstanceSettings() {
     if (!electronAvailable) return;
     const version = setInstanceSelect.value;
     const s = await ipcRenderer.invoke('get-settings', version);
-    const allSettings = await ipcRenderer.invoke('get-all-settings');
-    const totalPlaytimeMs = Object.entries(allSettings || {}).reduce((sum, [key, value]) => {
-        if (key === '_global' || !value || typeof value !== 'object') return sum;
-        const playtime = Number(value.playtime) || 0;
-        return sum + playtime;
-    }, 0);
+
+    let totalPlaytimeMs = cachedTotalPlaytimeMs;
+    if (totalPlaytimeMs === null) {
+        const allSettings = await ipcRenderer.invoke('get-all-settings');
+        totalPlaytimeMs = Object.entries(allSettings || {}).reduce((sum, [key, value]) => {
+            if (key === '_global' || !value || typeof value !== 'object') return sum;
+            const playtime = Number(value.playtime) || 0;
+            return sum + playtime;
+        }, 0);
+        cachedTotalPlaytimeMs = totalPlaytimeMs;
+    }
     const ramMb = normalizeRamMb(s.ram || "4096");
     const ramGb = normalizeRamGb(mbToGb(ramMb));
     if (setRam) setRam.value = formatRamGb(ramGb);
@@ -753,6 +761,7 @@ if (electronAvailable && ipcRenderer) {
         setStatus(data.msg, data.prog);
         if (data.msg === 'Launch complete!' || data.prog >= 100) {
             statusText.textContent = 'Launch completed!';
+            cachedTotalPlaytimeMs = null; // invalidate so it re-sums after playtime changes
             setTimeout(() => {
                 if (statusBar) statusBar.classList.remove('visible');
             }, 1000);
@@ -845,7 +854,6 @@ async function initUI() {
     globLang.addEventListener('change', saveGlobalSettings);
     globCloseOnBoot?.addEventListener('change', saveGlobalSettings);
     
-    setInstanceSelect.addEventListener('change', loadInstanceSettings);
     setInstanceSelect.addEventListener('change', loadInstanceSettings);
     versionSelect?.addEventListener('change', (e) => { setInstanceSelect.value = e.target.value; loadInstanceSettings(); });
     launchProfileSelect?.addEventListener('change', async () => {
@@ -1820,8 +1828,8 @@ async function initUI() {
     }
 
     // Bubble animation — Canvas-based: zero DOM manipulation, single GPU texture
-    const MAX_BUBBLES = 12;
-    const SPAWN_INTERVAL_MS = 380;
+    const MAX_BUBBLES = 5;
+    const SPAWN_INTERVAL_MS = 800;
     const SAFE = 80;
     const ATTR_RADIUS = 200;
     const ATTR_FORCE = 0.02;
@@ -1832,6 +1840,7 @@ async function initUI() {
     canvas.style.inset = '0';
     canvas.style.pointerEvents = 'none';
     canvas.style.zIndex = '0';
+    canvas.style.filter = 'blur(1.5px)';
     layer.appendChild(canvas);
 
     // Remove old DOM bubble elements if any exist
@@ -1847,36 +1856,99 @@ async function initUI() {
     let bubbleColor = 'rgba(139,92,246,0.12)';
     let bgColor = '#f5f5f7';
 
-    // Read CSS custom properties once, not per frame
+    // --- Color parsing & lerping for smooth theme transitions ---
+    function parseColorToRgb(str) {
+        if (str.startsWith('#')) {
+            const hex = str.slice(1);
+            if (hex.length === 3) {
+                return { r: parseInt(hex[0]+hex[0],16), g: parseInt(hex[1]+hex[1],16), b: parseInt(hex[2]+hex[2],16), a: 1 };
+            }
+            if (hex.length >= 6) {
+                return { r: parseInt(hex.slice(0,2),16), g: parseInt(hex.slice(2,4),16), b: parseInt(hex.slice(4,6),16), a: 1 };
+            }
+        }
+        const m = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+        if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] !== undefined ? +m[4] : 1 };
+        return null;
+    }
+    function rgbToCss({r,g,b,a}) {
+        if (a < 1) return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${a.toFixed(3)})`;
+        const h = (v) => Math.round(v).toString(16).padStart(2,'0');
+        return `#${h(r)}${h(g)}${h(b)}`;
+    }
+    function lerpRgb(from, to, t) {
+        return { r: from.r+(to.r-from.r)*t, g: from.g+(to.g-from.g)*t, b: from.b+(to.b-from.b)*t, a: from.a+(to.a-from.a)*t };
+    }
+
+    // Current displayed colors (lerped toward target)
+    let curBubbleRgb = null;
+    let curBgRgb = null;
+    let startBubbleRgb = null;
+    let startBgRgb = null;
+    let targetBubbleRgb = null;
+    let targetBgRgb = null;
+    let themeTransitionStart = 0;
+    const THEME_FADE_MS = 500;
+
     function readColors() {
         const style = getComputedStyle(document.documentElement);
         const bc = style.getPropertyValue('--bubble').trim();
         const bg = style.getPropertyValue('--bg').trim();
-        if (bc) bubbleColor = bc;
-        if (bg) bgColor = bg;
+        const newBubble = bc ? parseColorToRgb(bc) : null;
+        const newBg = bg ? parseColorToRgb(bg) : null;
+
+        if (!newBubble || !newBg) return;
+
+        // First call: set colors instantly, no transition
+        if (!targetBubbleRgb) {
+            curBubbleRgb = newBubble;
+            curBgRgb = newBg;
+            targetBubbleRgb = newBubble;
+            targetBgRgb = newBg;
+            bubbleColor = bc;
+            bgColor = bg;
+            return;
+        }
+
+        // If colors differ from current targets, start a smooth transition
+        const bubbleChanged = newBubble.r !== targetBubbleRgb.r || newBubble.g !== targetBubbleRgb.g || newBubble.b !== targetBubbleRgb.b || Math.abs(newBubble.a - targetBubbleRgb.a) > 0.001;
+        const bgChanged = newBg.r !== targetBgRgb.r || newBg.g !== targetBgRgb.g || newBg.b !== targetBgRgb.b;
+
+        if (bubbleChanged || bgChanged) {
+            // Capture current displayed values as transition start
+            startBubbleRgb = curBubbleRgb ? { ...curBubbleRgb } : newBubble;
+            startBgRgb = curBgRgb ? { ...curBgRgb } : newBg;
+            curBubbleRgb = { ...startBubbleRgb };
+            curBgRgb = { ...startBgRgb };
+            targetBubbleRgb = newBubble;
+            targetBgRgb = newBg;
+            themeTransitionStart = perfNow();
+            spriteCache.clear();
+        }
     }
-    readColors();
 
     // Pre-rendered sprite cache: render each bubble size ONCE to an offscreen canvas.
-    // Eliminates 840 GPU gradient state mutations per frame (the Windows 20fps bottleneck).
     const spriteCache = new Map();
-    function getSprite(r) {
+    function getSprite(r, bubCol) {
         const key = Math.round(r / 20) * 20;
-        let sprite = spriteCache.get(key);
-        if (!sprite) {
-            const d = key * 2;
-            sprite = document.createElement('canvas');
-            sprite.width = sprite.height = d;
-            const sctx = sprite.getContext('2d');
-            const grad = sctx.createRadialGradient(key, key, 0, key, key, key);
-            grad.addColorStop(0, bubbleColor);
-            grad.addColorStop(0.7, 'transparent');
-            sctx.fillStyle = grad;
-            sctx.beginPath();
-            sctx.arc(key, key, key, 0, Math.PI * 2);
-            sctx.fill();
-            spriteCache.set(key, sprite);
+        // During transitions, skip cache (colors change per frame)
+        const transitioning = themeTransitionStart > 0 && (perfNow() - themeTransitionStart) < THEME_FADE_MS;
+        if (!transitioning) {
+            let sprite = spriteCache.get(key);
+            if (sprite) return sprite;
         }
+        const d = key * 2;
+        const sprite = document.createElement('canvas');
+        sprite.width = sprite.height = d;
+        const sctx = sprite.getContext('2d');
+        const grad = sctx.createRadialGradient(key, key, 0, key, key, key);
+        grad.addColorStop(0, bubCol);
+        grad.addColorStop(1, bubCol);
+        sctx.fillStyle = grad;
+        sctx.beginPath();
+        sctx.arc(key, key, key, 0, Math.PI * 2);
+        sctx.fill();
+        if (!transitioning) spriteCache.set(key, sprite);
         return sprite;
     }
 
@@ -1890,7 +1962,7 @@ async function initUI() {
         vh = window.innerHeight;
         // Cap internal canvas resolution: 4K at 2x DPR = 33M pixels/frame,
         // which overwhelms Windows GPU canvas 2D drivers. Linux handles it fine.
-        const MAX_DIM = 2560;
+        const MAX_DIM = 1280;
         const scale = Math.min(1, MAX_DIM / Math.max(vw * dpr, vh * dpr));
         canvas.width  = Math.round(vw * dpr * scale);
         canvas.height = Math.round(vh * dpr * scale);
@@ -1909,14 +1981,16 @@ async function initUI() {
 
     const mouse = { x: -9999, y: -9999 };
     let pointerDirty = false;
+    let lastPointerTime = 0;
     window.addEventListener('pointermove', (e) => {
         mouse.x = e.clientX;
         mouse.y = e.clientY;
         pointerDirty = true;
+        lastPointerTime = perfNow();
     }, { passive: true });
 
     function createBubble(prefill) {
-        const size = 160 + Math.random() * 300;
+        const size = 100 + Math.random() * 250;
         return {
             size,
             x: SAFE + Math.random() * Math.max(vw - 2 * SAFE - size, 0),
@@ -1932,9 +2006,45 @@ async function initUI() {
     const CURSOR_PUSH_TIMEOUT = 5000;
     let lastSpawn = 0;
     let animId = null;
+    let idleFrameSkip = 0;
 
     function updateBubblesCanvas() {
         const tNow = perfNow();
+
+        // Skip 2 of every 3 frames when mouse idle > 3s (drops from 60→20fps for bubbles, imperceptible)
+        if (tNow - lastPointerTime > 3000) {
+            idleFrameSkip = (idleFrameSkip + 1) % 3;
+            if (idleFrameSkip !== 0) {
+                animId = requestAnimationFrame(updateBubblesCanvas);
+                return;
+            }
+        } else {
+            idleFrameSkip = 0;
+        }
+
+        // --- Smooth theme color lerping (start → target, ease-out cubic) ---
+        if (themeTransitionStart > 0 && startBubbleRgb && targetBubbleRgb) {
+            const elapsed = tNow - themeTransitionStart;
+            const t = Math.min(1, elapsed / THEME_FADE_MS);
+            const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+            curBubbleRgb = lerpRgb(startBubbleRgb, targetBubbleRgb, eased);
+            curBgRgb = lerpRgb(startBgRgb, targetBgRgb, eased);
+            if (t >= 1) {
+                curBubbleRgb = targetBubbleRgb;
+                curBgRgb = targetBgRgb;
+                themeTransitionStart = 0;
+                bubbleColor = rgbToCss(targetBubbleRgb);
+                bgColor = rgbToCss(targetBgRgb);
+                spriteCache.clear(); // rebuild sprites at final colors
+            }
+        }
+
+        const currentBubble = (themeTransitionStart > 0 && curBubbleRgb)
+            ? rgbToCss(curBubbleRgb)
+            : bubbleColor;
+        const currentBg = (themeTransitionStart > 0 && curBgRgb)
+            ? rgbToCss(curBgRgb)
+            : bgColor;
 
         if (bubbles.length < MAX_BUBBLES && (tNow - lastSpawn) > SPAWN_INTERVAL_MS) {
             bubbles.push(createBubble(false));
@@ -1944,7 +2054,8 @@ async function initUI() {
         const localMouse = pointerDirty ? { x: mouse.x, y: mouse.y } : mouse;
         pointerDirty = false;
 
-        ctx.fillStyle = bgColor;
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = currentBg;
         ctx.fillRect(0, 0, vw, vh);
 
         for (let i = bubbles.length - 1; i >= 0; i--) {
@@ -1981,12 +2092,12 @@ async function initUI() {
                 ? Math.max(0, b.opacity - 0.03)
                 : Math.min(1, b.opacity + 0.03);
 
-            // Draw with pre-rendered sprite — single GPU texture blit, zero gradient mutations
+            // Draw with pre-rendered sprite (or live-rendered during transitions)
             const r = b.size / 2;
             ctx.globalAlpha = b.opacity;
-            ctx.drawImage(getSprite(r), cx - r, cy - r, b.size, b.size);
+            ctx.drawImage(getSprite(r, currentBubble), cx - r, cy - r, b.size, b.size);
 
-            if (b.y + b.size < -50) {
+            if (b.y + b.size < -300) {
                 bubbles[i] = createBubble(false);
             }
         }
@@ -2004,12 +2115,22 @@ async function initUI() {
             cancelAnimationFrame(animId);
             animId = null;
         }
-        ctx.fillStyle = bgColor;
+        ctx.fillStyle = (themeTransitionStart > 0 && curBgRgb) ? rgbToCss(curBgRgb) : bgColor;
         ctx.fillRect(0, 0, vw, vh);
     }
 
     // Start if not in simple mode
     if (!document.documentElement.hasAttribute('data-simple')) startBubbles();
+
+    // Pause/resume bubble animation based on page visibility (saves GPU when hidden/minimized)
+    document.addEventListener('visibilitychange', () => {
+        if (document.documentElement.hasAttribute('data-simple')) return;
+        if (document.hidden) {
+            stopBubbles();
+        } else {
+            startBubbles();
+        }
+    });
 
     // --- Auto-update event listeners ---
     if (typeof window.updateAPI !== 'undefined') {
@@ -2084,27 +2205,6 @@ async function initUI() {
             }
         });
     }
-
-    // --- FPS + stutter diagnostic ---
-    const fpsEl = document.createElement('div');
-    fpsEl.style.cssText = 'position:fixed;top:4px;right:8px;z-index:99999;font-family:monospace;font-size:11px;color:#0f0;background:rgba(0,0,0,0.8);padding:3px 7px;border-radius:4px;pointer-events:none;';
-    document.body.appendChild(fpsEl);
-    const ft = [];
-    let ff = 0, fl = performance.now(), lf = performance.now();
-    (function loop() {
-        const n = performance.now(), d = n - lf; lf = n;
-        ft.push(d); if (ft.length > 120) ft.shift();
-        ff++;
-        if (n - fl >= 500) {
-            const fps = Math.round(ff / ((n - fl) / 1000));
-            const avg = ft.reduce((a,b) => a+b, 0) / ft.length;
-            const v = ft.length > 10 ? Math.round(Math.sqrt(ft.reduce((s,t) => s + (t-avg)*(t-avg), 0) / ft.length) * 10) / 10 : 0;
-            fpsEl.style.color = v < 3 ? '#0f0' : v < 6 ? '#ff0' : '#f44';
-            fpsEl.textContent = `${fps} FPS  stutter:${v}ms`;
-            ff = 0; fl = n;
-        }
-        requestAnimationFrame(loop);
-    })();
 }
 
 document.addEventListener('DOMContentLoaded', initUI);
@@ -2143,6 +2243,7 @@ function setupCustomSelects() {
             list.style.top = (rect.bottom + 8) + 'px';
             list.style.left = rect.left + 'px';
             list.style.width = rect.width + 'px';
+            list.style.boxSizing = 'border-box';
         }
 
         function updateList() {

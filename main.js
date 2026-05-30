@@ -385,13 +385,7 @@ ipcMain.on('restart-and-install', () => {
   autoUpdater.quitAndInstall(false, true);
 });
 
-app.whenReady().then(async () => {
-  // --- GPU diagnostics (logged on every startup) ---
-  const gpuInfo = await app.getGPUInfo('basic');
-  console.log('[GPU] Hardware acceleration:', gpuInfo?.gpuDevice?.[0]?.active ?? 'unknown');
-  console.log('[GPU] Device:', gpuInfo?.gpuDevice?.[0]?.deviceString ?? 'unknown');
-  console.log('[GPU] Vendor:', gpuInfo?.gpuDevice?.[0]?.vendorString ?? 'unknown');
-
+app.whenReady().then(() => {
   const win = createWindow();
 
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

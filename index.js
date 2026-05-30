@@ -670,16 +670,19 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
     const mcRoot = path.join(appRoot, "minecraft");
     if (!fs.existsSync(gameRoot)) fs.mkdirSync(gameRoot, { recursive: true });
 
-    // Auto-detect Java if no custom path is set
+    // Auto-detect Java if no custom path is set (cached across launches)
     let javaPath = instanceSettings?.javaPath || '';
     if (!javaPath || !fs.existsSync(javaPath)) {
-        const { execSync } = require('child_process');
-        try {
-            javaPath = execSync('which java 2>/dev/null || echo /usr/bin/java', { encoding: 'utf-8' }).trim();
-        } catch { javaPath = '/usr/bin/java'; }
-        if (!fs.existsSync(javaPath) && process.platform !== 'win32') {
-            try { javaPath = execSync('find /usr/lib/jvm -name java -type f 2>/dev/null | head -1', { encoding: 'utf-8', shell: true }).trim(); } catch {}
+        if (!globalThis.__cachedJavaPath) {
+            const { execSync } = require('child_process');
+            try {
+                globalThis.__cachedJavaPath = execSync('which java 2>/dev/null || echo /usr/bin/java', { encoding: 'utf-8' }).trim();
+            } catch { globalThis.__cachedJavaPath = '/usr/bin/java'; }
+            if (!fs.existsSync(globalThis.__cachedJavaPath) && process.platform !== 'win32') {
+                try { globalThis.__cachedJavaPath = execSync('find /usr/lib/jvm -name java -type f 2>/dev/null | head -1', { encoding: 'utf-8', shell: true }).trim(); } catch {}
+            }
         }
+        javaPath = globalThis.__cachedJavaPath || '/usr/bin/java';
     }
 
     let opts = {
