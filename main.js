@@ -5,10 +5,8 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { loginAccount, getAuthAccounts, setActiveAuthAccount, removeAuthAccount } = require('./index.js');
 
-// --- GPU acceleration (safe flags — no stutter, no frame pacing issues) ---
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
-app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
+// --- GPU acceleration: let Chromium auto-detect optimal settings ---
+// (Custom flags removed — they caused stutter on NVIDIA 4000 series GPUs)
 
 let mainWindow = null;
 
