@@ -1840,7 +1840,7 @@ async function initUI() {
     canvas.style.inset = '0';
     canvas.style.pointerEvents = 'none';
     canvas.style.zIndex = '0';
-    canvas.style.filter = 'blur(1.5px)';
+    // canvas.style.filter = 'blur(1.5px)'; // REMOVED FOR WINDOWS PERF
     layer.appendChild(canvas);
 
     // Remove old DOM bubble elements if any exist
@@ -2007,9 +2007,16 @@ async function initUI() {
     let lastSpawn = 0;
     let animId = null;
     let idleFrameSkip = 0;
+    let lastRenderTime = 0;
 
     function updateBubblesCanvas() {
         const tNow = perfNow();
+
+        if (tNow - lastRenderTime < 16) {
+            animId = requestAnimationFrame(updateBubblesCanvas);
+            return;
+        }
+        lastRenderTime = tNow;
 
         // Skip 2 of every 3 frames when mouse idle > 3s (drops from 60→20fps for bubbles, imperceptible)
         if (tNow - lastPointerTime > 3000) {
