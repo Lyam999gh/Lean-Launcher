@@ -88,6 +88,9 @@ let editingFileState = null;
 let currentInstanceFilesVersion = null;
 let suppressFileEditorBackdropClick = false;
 let totalSystemRamMb = null;
+// Bubble animation hooks — assigned inside initUI once canvas is ready
+let startBubbles = () => {};
+let stopBubbles = () => {};
 
 const i18n = {
     en: {
@@ -201,7 +204,7 @@ async function loadGlobalSettings() {
 }
 
 function saveGlobalSettings() {
-    if (!electronAvailable) { console.warn('[Settings] electronAvailable is false, cannot save'); return; }
+    if (!electronAvailable) return;
     const g = {
         theme: globTheme.value,
         language: globLang.value,
@@ -209,7 +212,6 @@ function saveGlobalSettings() {
         simpleMode: Boolean(globSimpleMode?.checked),
         showFpsWarning: Boolean(globShowFpsWarning?.checked)
     };
-    console.log('[Settings] UI saving:', JSON.stringify(g));
     document.documentElement.setAttribute('data-theme', g.theme);
     if (g.simpleMode) {
         document.documentElement.setAttribute('data-simple', 'true');
@@ -219,23 +221,10 @@ function saveGlobalSettings() {
         startBubbles();
     }
     applyTranslations();
-    ipcRenderer.invoke('save-global-settings', g).then(() => {
-        console.log('[Settings] UI save confirmed by main process');
-    }).catch(err => {
+    ipcRenderer.invoke('save-global-settings', g).catch(err => {
         console.error('[Settings] Failed to save global settings:', err);
     });
 }
-
-// Debug helper — run in DevTools console to test save directly
-window.debugSave = () => {
-    console.log('[Debug] Manual save triggered');
-    saveGlobalSettings();
-};
-window.debugRead = async () => {
-    if (!electronAvailable) { console.log('[Debug] No electron'); return; }
-    const g = await ipcRenderer.invoke('get-global-settings');
-    console.log('[Debug] Current saved settings:', JSON.stringify(g));
-};
 
 function formatCrashReport(report) {
     if (!report || typeof report !== 'object') return 'No details were provided.';
@@ -2250,18 +2239,18 @@ async function initUI() {
         animId = requestAnimationFrame(updateBubblesCanvas);
     }
 
-    function startBubbles() {
+    startBubbles = function() {
         if (animId) return;
         animId = requestAnimationFrame(updateBubblesCanvas);
-    }
+    };
 
-    function stopBubbles() {
+    stopBubbles = function() {
         if (animId) {
             cancelAnimationFrame(animId);
             animId = null;
         }
         ctx.clearRect(0, 0, vw, vh);
-    }
+    };
 
     // Start if not in simple mode
     if (!document.documentElement.hasAttribute('data-simple')) startBubbles();
@@ -2388,14 +2377,12 @@ function showFpsWarningIfNeeded() {
         if (closed) return;
         closed = true;
         try {
-            console.log('[Settings] FPS warning closed, dontAsk=' + fpsWarningDontAsk.checked);
             if (fpsWarningDontAsk.checked && globShowFpsWarning) {
                 globShowFpsWarning.checked = false;
-                console.log('[Settings] User checked "dont ask again", saving...');
                 saveGlobalSettings();
             }
         } catch (e) {
-            console.error('[Settings] Failed to save FPS warning preference:', e);
+            console.error('Failed to save FPS warning preference:', e);
         }
         fpsWarningModal.classList.remove('visible');
         setTimeout(() => fpsWarningModal.classList.add('hidden'), 350);

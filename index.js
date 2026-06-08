@@ -219,25 +219,16 @@ function syncBundledProfileResourcePacks(baseVersion, profile, instanceDirectory
 }
 
 function loadSettings() {
-    console.log('[Settings] Loading from:', SETTINGS_PATH);
-    if (!fs.existsSync(SETTINGS_PATH)) { console.log('[Settings] File does not exist, returning defaults'); return {}; }
-    try {
-        const data = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-        console.log('[Settings] Loaded OK, _global:', JSON.stringify(data._global));
-        return data;
-    } catch (err) {
-        console.error('[Settings] Failed to parse settings.json:', err.message);
-        return {};
-    }
+    if (!fs.existsSync(SETTINGS_PATH)) return {};
+    try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); } 
+    catch { return {}; }
 }
 function saveSettings(settingsObj) {
     const dir = path.dirname(SETTINGS_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const tmpPath = SETTINGS_PATH + '.tmp';
-    console.log('[Settings] Saving to:', SETTINGS_PATH);
     fs.writeFileSync(tmpPath, JSON.stringify(settingsObj, null, 2), 'utf-8');
     fs.renameSync(tmpPath, SETTINGS_PATH);
-    console.log('[Settings] Saved OK');
 }
 function getGlobalSettings() {
     const globalSettings = loadSettings()._global || {};
@@ -251,12 +242,11 @@ function getGlobalSettings() {
 }
 function saveGlobalSettings(glob) {
     try {
-        console.log('[Settings] saveGlobalSettings called with:', JSON.stringify(glob));
         const all = loadSettings();
         all._global = glob;
         saveSettings(all);
     } catch (err) {
-        console.error('[Settings] Failed to save global settings:', err);
+        console.error('Failed to save global settings:', err);
     }
 }
 function getInstanceSettings(version) { return normalizeInstanceSettings(version, loadSettings()[version]); }
