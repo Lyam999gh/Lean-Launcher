@@ -3122,6 +3122,17 @@ input:checked+.slider:before {
     opacity: 1 !important;
 }
 
+[data-simple="true"] .custom-version-action-btn,
+[data-simple="true"] .lean-version-profile-btn {
+    background: rgba(0, 0, 0, 0.8) !important;
+    border-color: rgba(255, 255, 255, 0.5) !important;
+}
+
+[data-simple="true"] .custom-version-action-btn:hover,
+[data-simple="true"] .lean-version-profile-btn:hover {
+    background: rgba(255, 255, 255, 0.25) !important;
+}
+
 [data-simple="true"] .user-section,
 [data-simple="true"] .nav-links,
 [data-simple="true"] .window-controls,

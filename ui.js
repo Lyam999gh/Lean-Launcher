@@ -218,7 +218,9 @@ function saveGlobalSettings() {
         startBubbles();
     }
     applyTranslations();
-    ipcRenderer.invoke('save-global-settings', g);
+    ipcRenderer.invoke('save-global-settings', g).catch(err => {
+        console.error('Failed to save global settings:', err);
+    });
 }
 
 function formatCrashReport(report) {

@@ -238,7 +238,16 @@ function getGlobalSettings() {
         showFpsWarning: globalSettings.showFpsWarning !== undefined ? Boolean(globalSettings.showFpsWarning) : true
     };
 }
-function saveGlobalSettings(glob) { const all = loadSettings(); all._global = glob; saveSettings(all); }
+function saveGlobalSettings(glob) {
+    try {
+        const all = loadSettings();
+        all._global = glob;
+        saveSettings(all);
+        debugLog('Global settings saved:', JSON.stringify(glob));
+    } catch (err) {
+        console.error('Failed to save global settings:', err);
+    }
+}
 function getInstanceSettings(version) { return normalizeInstanceSettings(version, loadSettings()[version]); }
 function normalizeAuthAccount(account) {
     if (!account || typeof account !== 'object') return null;
