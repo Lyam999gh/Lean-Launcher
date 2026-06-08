@@ -236,6 +236,11 @@ body {
     pointer-events: auto;
 }
 
+/* macOS: only the top half of the bar is draggable to avoid blocking clicks below */
+.platform-darwin .drag-area {
+    bottom: 50%;
+}
+
 .user-section,
 .user-section *,
 .nav-links,
@@ -644,9 +649,7 @@ body {
 .instance-files-upload-btn {
     border: 1px solid var(--panel-border);
     border-radius: 999px;
-    background: transparent;
-    backdrop-filter: blur(10px) saturate(120%);
-    -webkit-backdrop-filter: blur(10px) saturate(120%);
+    background: var(--modal-bg);
     color: var(--text);
     font-family: "Poppins", sans-serif;
     font-weight: 700;
@@ -1795,6 +1798,11 @@ select {
     background: transparent;
 }
 
+/* macOS: use native overlay scrollbars, custom ones cause scrolling issues */
+.platform-darwin * {
+    scrollbar-width: auto;
+}
+
 .about-me-section p {
     margin-left: 0;
     margin-right: 0;
@@ -2120,9 +2128,7 @@ select {
     padding: 10px 16px;
     border-radius: 10px;
     border: 1px solid var(--panel-border);
-    background: var(--panel-bg);
-    backdrop-filter: blur(20px) saturate(130%) brightness(1);
-    -webkit-backdrop-filter: blur(20px) saturate(130%) brightness(1);
+    background: var(--modal-bg);
     color: var(--text);
     cursor: pointer;
     font-weight: 700;

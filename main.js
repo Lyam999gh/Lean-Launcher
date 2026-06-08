@@ -47,6 +47,7 @@ function createWindow() {
     frame: false,
     icon: iconPath,
     autoHideMenuBar: true,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

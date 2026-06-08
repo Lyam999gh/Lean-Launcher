@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('leanAPI', {
   // Initial theme (read synchronously before page render)
   initialTheme,
 
+  // Current OS platform for CSS targeting
+  platform: process.platform,
+
   // IPC invoke (request → response)
   invoke(channel, ...args) {
     if (!ALLOWED_INVOKES.has(channel)) {
