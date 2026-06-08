@@ -3124,13 +3124,20 @@ input:checked+.slider:before {
 
 [data-simple="true"] .custom-version-action-btn,
 [data-simple="true"] .lean-version-profile-btn {
-    background: rgba(0, 0, 0, 0.8) !important;
+    background: #1e1e1e !important;
     border-color: rgba(255, 255, 255, 0.5) !important;
 }
 
 [data-simple="true"] .custom-version-action-btn:hover,
 [data-simple="true"] .lean-version-profile-btn:hover {
-    background: rgba(255, 255, 255, 0.25) !important;
+    background: #333333 !important;
+}
+
+[data-simple="true"] .custom-version-action-btn.delete,
+[data-simple="true"] .custom-version-action-btn.delete:hover,
+[data-simple="true"] .custom-version-action-btn.delete.active,
+[data-simple="true"] .custom-version-action-btn.delete.active:hover {
+    background: #be2626 !important;
 }
 
 [data-simple="true"] .user-section,
