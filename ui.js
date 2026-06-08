@@ -201,7 +201,7 @@ async function loadGlobalSettings() {
 }
 
 function saveGlobalSettings() {
-    if (!electronAvailable) return;
+    if (!electronAvailable) { console.warn('[Settings] electronAvailable is false, cannot save'); return; }
     const g = {
         theme: globTheme.value,
         language: globLang.value,
@@ -209,6 +209,7 @@ function saveGlobalSettings() {
         simpleMode: Boolean(globSimpleMode?.checked),
         showFpsWarning: Boolean(globShowFpsWarning?.checked)
     };
+    console.log('[Settings] UI saving:', JSON.stringify(g));
     document.documentElement.setAttribute('data-theme', g.theme);
     if (g.simpleMode) {
         document.documentElement.setAttribute('data-simple', 'true');
@@ -218,8 +219,10 @@ function saveGlobalSettings() {
         startBubbles();
     }
     applyTranslations();
-    ipcRenderer.invoke('save-global-settings', g).catch(err => {
-        console.error('Failed to save global settings:', err);
+    ipcRenderer.invoke('save-global-settings', g).then(() => {
+        console.log('[Settings] UI save confirmed by main process');
+    }).catch(err => {
+        console.error('[Settings] Failed to save global settings:', err);
     });
 }
 
@@ -2374,12 +2377,14 @@ function showFpsWarningIfNeeded() {
         if (closed) return;
         closed = true;
         try {
+            console.log('[Settings] FPS warning closed, dontAsk=' + fpsWarningDontAsk.checked);
             if (fpsWarningDontAsk.checked && globShowFpsWarning) {
                 globShowFpsWarning.checked = false;
+                console.log('[Settings] User checked "dont ask again", saving...');
                 saveGlobalSettings();
             }
         } catch (e) {
-            console.error('Failed to save FPS warning preference:', e);
+            console.error('[Settings] Failed to save FPS warning preference:', e);
         }
         fpsWarningModal.classList.remove('visible');
         setTimeout(() => fpsWarningModal.classList.add('hidden'), 350);
