@@ -1,0 +1,28 @@
+[
+  {
+    "version": "1.0.0",
+    "date": "May 31, 2026",
+    "title": "This is the first release of Lean Launcher.",
+    "description": "",
+    "features": [
+      {
+        "title": "Lean Launcher Features",
+        "items": [
+          "Custom version creation and editing",
+          "Per-instance settings with RAM and JVM controls",
+          "Instance file manager with upload and drag/drop support",
+          "Theme system, language selection, and profile selection"
+        ]
+      },
+      {
+        "title": "Client Features",
+        "items": [
+          "Performance-focused client experience",
+          "Lean Client Old version support",
+          "Multiple version targets and profile options",
+          "Ready for lightweight and customizable setups"
+        ]
+      }
+    ]
+  }
+]

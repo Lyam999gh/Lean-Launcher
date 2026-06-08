@@ -1,0 +1,27 @@
+# Minecraft instances
+minecraft/instances/*/
+
+# OS files
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Node / runtime
+node_modules/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build output
+dist/
+
+# Obsidian notes app config
+.obsidian/
+
+# User data (auth tokens, settings)
+auth-cache.json
+saved-skins/

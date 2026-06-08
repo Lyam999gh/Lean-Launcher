@@ -1,0 +1,35 @@
+{
+  "_global": {
+    "theme": "dark",
+    "language": "en",
+    "closeOnBoot": false,
+    "simpleMode": false
+  },
+  "1.21.11": {
+    "ram": "10240",
+    "preset": "default",
+    "jvmArgs": "",
+    "javaPath": "",
+    "playtime": 0,
+    "baseVersion": "1.21.11",
+    "availableProfiles": [
+      "full",
+      "lightweight"
+    ],
+    "activeProfile": "full"
+  },
+  "1.21.7": {
+    "ram": "4096",
+    "preset": "default",
+    "jvmArgs": [],
+    "javaPath": "",
+    "playtime": 0,
+    "baseVersion": "1.21.7",
+    "availableProfiles": [
+      "balanced",
+      "full",
+      "lightweight"
+    ],
+    "activeProfile": "lightweight"
+  }
+}

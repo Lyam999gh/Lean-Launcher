@@ -1,0 +1,15 @@
+{
+  "pack": {
+    "pack_format": 35,
+	"supported_formats": [35, 2147483647],
+    "description": "§eMultiples the brightness settings slider by 10x. §41.21.2+"
+  },
+	"overlays": {
+		"entries": [
+			{
+				"formats": {"min_inclusive": 57, "max_inclusive": 2147483647},
+				"directory": "v57"
+			}
+		]
+	}
+}

@@ -1,0 +1,19 @@
+Vanilla Tweaks Resource Pack
+Version: 1.21
+Packs:
+	ConsistentBucketFix
+	JappaObserver
+	ItemStitchingFix
+	HoeFix
+	ItemHoldFix
+	SmileyAxolotls
+	MoreCrosshairs-Heart
+	DarkUI
+	NoFog
+	LowerShield
+	LowerFire
+	SmallerUtilities
+	ClearBannerPatterns
+	ShorterTallGrass
+	ShorterGrass
+	GoldenCrown
