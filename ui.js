@@ -226,6 +226,17 @@ function saveGlobalSettings() {
     });
 }
 
+// Debug helper — run in DevTools console to test save directly
+window.debugSave = () => {
+    console.log('[Debug] Manual save triggered');
+    saveGlobalSettings();
+};
+window.debugRead = async () => {
+    if (!electronAvailable) { console.log('[Debug] No electron'); return; }
+    const g = await ipcRenderer.invoke('get-global-settings');
+    console.log('[Debug] Current saved settings:', JSON.stringify(g));
+};
+
 function formatCrashReport(report) {
     if (!report || typeof report !== 'object') return 'No details were provided.';
 

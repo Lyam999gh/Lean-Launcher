@@ -120,7 +120,10 @@ ipcMain.handle('cancel-launch', () => {
 });
 
 ipcMain.handle('get-global-settings', () => require('./index.js').getGlobalSettings());
-ipcMain.handle('save-global-settings', (_, glob) => require('./index.js').saveGlobalSettings(glob));
+ipcMain.handle('save-global-settings', (_, glob) => {
+  console.log('[Main] IPC save-global-settings received:', JSON.stringify(glob));
+  return require('./index.js').saveGlobalSettings(glob);
+});
 
 ipcMain.handle('get-auth-accounts', () => getAuthAccounts());
 
