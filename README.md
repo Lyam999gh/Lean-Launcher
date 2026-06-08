@@ -38,6 +38,33 @@ A sleek, modern Minecraft launcher built with Electron. Launch optimized modpack
 
 ---
 
+## Installation
+
+> **Note:** Lean Launcher is not code-signed yet, so your OS may show a security warning on first launch. This does **not** mean the app is harmful — it simply means it hasn't been signed with a paid developer certificate. See below for how to open it on your platform.
+
+### Windows
+
+1. Download `Lean Launcher Setup x.x.x.exe` from the [latest release](https://github.com/Lyam999gh/Lean-Launcher/releases/latest)
+2. Run the installer — Windows SmartScreen will show a blue popup saying "Windows protected your PC"
+3. Click **"More info"**, then click **"Run anyway"**
+4. Follow the installer prompts to finish
+
+### macOS
+
+1. Download the `.dmg` from the [latest release](https://github.com/Lyam999gh/Lean-Launcher/releases/latest)
+2. Open the `.dmg` and drag `Lean Launcher.app` into your **Applications** folder
+3. The first time you open it, macOS will block it with a "cannot be opened because it is from an unidentified developer" message
+4. Go to **System Settings → Privacy & Security**, scroll to the bottom, and click **"Open Anyway"** next to Lean Launcher
+5. Confirm by clicking **"Open Anyway"** in the popup — you only need to do this once
+
+### Linux
+
+1. Download the `.AppImage` from the [latest release](https://github.com/Lyam999gh/Lean-Launcher/releases/latest)
+2. Make it executable: `chmod +x Lean-Launcher-*.AppImage`
+3. Run it: `./Lean-Launcher-*.AppImage`
+
+---
+
 ## Getting Started
 
 ### Prerequisites
