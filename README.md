@@ -1,6 +1,6 @@
 # Lean Launcher
 
-A sleek, modern Minecraft launcher built with Electron. Launch optimized modpacks, manage instances, and keep everything up to date — all from a beautiful glassmorphism interface.
+A modern Minecraft launcher built with Electron for Windows, macOS, and Linux. Lean Launcher provides a streamlined experience for managing accounts, organizing instances, launching modpacks, and keeping installations up to date through a polished and intuitive interface.
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platforms">
@@ -8,143 +8,165 @@ A sleek, modern Minecraft launcher built with Electron. Launch optimized modpack
   <img src="https://img.shields.io/badge/license-ISC-green" alt="License">
 </p>
 
----
+## Overview
+
+Lean Launcher is designed to simplify the Minecraft experience while providing powerful management tools for both casual players and advanced users. It combines a modern user interface with reliable account management, custom instance support, automatic updates, and integrated tooling for maintaining Minecraft installations.
 
 ## Features
 
-### Core Launcher
-- **One-click launch** — pick a version, choose a profile, hit Launch
-- **Microsoft & offline auth** — sign in with your Microsoft account or play cracked with a username
-- **Multi-account support** — save, switch, and manage multiple accounts from the login panel
-- **Close-on-boot mode** — automatically hides the launcher when the game starts, reopens when you quit
+### Launcher
+
+* One-click game launch
+* Microsoft and offline authentication
+* Multiple account support
+* Close-on-boot mode that automatically hides the launcher while Minecraft is running
 
 ### Instance Management
-- **Official Lean Client versions** — 1.19.4 through 1.21.11, each with Balanced, Full, and Lightweight mod profiles
-- **Custom instances** — create your own version with any Minecraft release, plus Fabric or Forge loader
-- **Per-instance settings** — RAM allocation, JVM presets, custom Java path, and playtime tracking per version
-- **Instance file editor** — browse, edit, upload, and drag-and-drop files directly into any instance folder
 
-### Visual Experience
-- **10 built-in themes** — Light, Dark, Midnight, Pastel, Grass, Nether, End, Cherry, Deep Dark, Space, and Bees
-- **Glassmorphism UI** — frosted glass panels, animated bubbles, and smooth page transitions
-- **3 languages** — English, Español, and Português
-- **Animated background** — floating bubble layer that reacts to your mouse
+* Official Lean Client versions from 1.19.4 through 1.21.11
+* Balanced, Full, and Lightweight mod profiles
+* Custom instances with support for any Minecraft release
+* Fabric and Forge loader support
+* Per-instance RAM allocation
+* JVM presets and custom Java paths
+* Playtime tracking
+* Integrated file manager with browse, edit, upload, and drag-and-drop support
 
-### Under the Hood
-- **Auto-updating** — checks GitHub Releases on startup, downloads deltas, and shows a glassmorphism changelog modal
-- **Crash reporting** — detailed crash reports with log tails, JVM config, and suggested fixes
-- **Profile sync** — smart manifest system avoids redundant mod/resource pack copies on every launch
-- **Shaders & resource packs** — Full profile bundles come with shaders and resource packs pre-configured
+### User Experience
 
----
+* Ten built-in themes
+* Smooth animations and transitions
+* Glassmorphism-inspired interface design
+* Interactive animated backgrounds
+* Language support for English, Español, and Português
+
+### Reliability
+
+* Automatic update checks through GitHub Releases
+* Delta update downloads when available
+* Crash reporting with diagnostic information
+* Intelligent profile synchronization
+* Preconfigured shaders and resource packs for Full profiles
 
 ## Installation
 
-> **Note:** Lean Launcher is not code-signed yet, so your OS may show a security warning on first launch. This does **not** mean the app is harmful — it simply means it hasn't been signed with a paid developer certificate. See below for how to open it on your platform.
+> **Note**
+>
+> Lean Launcher is currently not code signed. Your operating system may display a security warning during the first launch. This is expected and simply indicates that the application has not yet been signed with a developer certificate.
 
 ### Windows
 
-1. Download `Lean Launcher Setup x.x.x.exe` from the [latest release](https://github.com/Lyam999gh/Lean-Launcher/releases/latest)
-2. Run the installer — Windows SmartScreen will show a blue popup saying "Windows protected your PC"
-3. Click **"More info"**, then click **"Run anyway"**
-4. Follow the installer prompts to finish
+1. Download `Lean Launcher Setup x.x.x.exe` from the latest release.
+2. Run the installer.
+3. If Windows SmartScreen appears, select **More info**.
+4. Click **Run anyway**.
+5. Complete the installation process.
 
 ### macOS
 
-1. Download the `.dmg` from the [latest release](https://github.com/Lyam999gh/Lean-Launcher/releases/latest)
-2. Open the `.dmg` and drag `Lean Launcher.app` into your **Applications** folder
-3. The first time you open it, macOS will block it with a "cannot be opened because it is from an unidentified developer" message
-4. Go to **System Settings → Privacy & Security**, scroll to the bottom, and click **"Open Anyway"** next to Lean Launcher
-5. Confirm by clicking **"Open Anyway"** in the popup — you only need to do this once
+1. Download the `.dmg` from the latest release.
+2. Open the downloaded file.
+3. Drag `Lean Launcher.app` into the **Applications** folder.
+4. If macOS blocks the application on first launch, open **System Settings → Privacy & Security**.
+5. Select **Open Anyway** for Lean Launcher.
+6. Confirm the prompt.
 
 ### Linux
 
-1. Download the `.AppImage` from the [latest release](https://github.com/Lyam999gh/Lean-Launcher/releases/latest)
-2. Make it executable: `chmod +x Lean-Launcher-*.AppImage`
-3. Run it: `./Lean-Launcher-*.AppImage`
+1. Download the `.AppImage` from the latest release.
+2. Make the file executable:
 
----
+```bash
+chmod +x Lean-Launcher-*.AppImage
+```
+
+3. Run the application:
+
+```bash
+./Lean-Launcher-*.AppImage
+```
 
 ## Getting Started
 
-### Prerequisites
-- [Node.js](https://nodejs.org) 18 or later
-- npm (comes with Node.js)
+### Requirements
+
+* Node.js 18 or later
+* npm
 
 ### Development
+
 ```bash
-# Clone the repo
 git clone https://github.com/YOUR_USERNAME/LeanLauncher.git
 cd LeanLauncher
 
-# Install dependencies
 npm install
-
-# Run in development mode
 npm run dev
 ```
 
 ### Building
+
 ```bash
-# Build for your current OS
+# Build for the current platform
 npm run build
 
-# Build for a specific platform
-npm run build:win      # Windows (.exe)
-npm run build:mac      # macOS (.dmg + .zip)
-npm run build:linux    # Linux (.AppImage)
+# Windows
+npm run build:win
 
-# Build for all platforms
+# macOS
+npm run build:mac
+
+# Linux
+npm run build:linux
+
+# All supported platforms
 npm run build:all
 ```
 
-Builds are output to the `dist/` folder.
+Build artifacts are generated in the `dist/` directory.
 
 ### Releasing
-Push a semantic version tag to trigger the CI/CD pipeline:
+
+Create and push a semantic version tag:
+
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-GitHub Actions will build Windows, macOS (x64 + ARM), and Linux installers and publish them to GitHub Releases.
-
----
+The release workflow will automatically build supported platform packages and publish them to GitHub Releases.
 
 ## Project Structure
 
-```
+```text
 LeanLauncher/
-├── main.js              # Electron main process — window, IPC, auto-updater
-├── preload.js           # Context bridge for update API
-├── index.js             # Game launch logic — auth, mod sync, crash reports
-├── index.html           # Renderer entry point
-├── ui.js                # Frontend — navigation, settings, modals, translations
-├── style.css            # Glassmorphism theme engine + all component styles
-├── package.json         # Dependencies + electron-builder config
+├── main.js
+├── preload.js
+├── index.js
+├── index.html
+├── ui.js
+├── style.css
+├── package.json
 ├── lib/
-│   └── ram-utils.js     # RAM conversion & clamping utilities
-├── mod-profiles/        # Bundled mod sets per version & profile
-├── minecraft/           # Game assets, libraries, instances, natives
+│   └── ram-utils.js
+├── mod-profiles/
+├── minecraft/
 └── .github/workflows/
-    └── release.yml      # CI/CD — cross-platform build matrix
+    └── release.yml
 ```
 
----
+## Technology
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Runtime | [Electron](https://electronjs.org) 26 |
-| Auth | [msmc](https://github.com/Hanro50/msmc) (Microsoft OAuth) |
-| Game Launch | [minecraft-launcher-core](https://github.com/Pierce01/MinecraftLauncher-core) |
-| Auto-Updates | [electron-updater](https://www.electron.build/auto-update) |
-| Packaging | [electron-builder](https://www.electron.build) |
-| CI/CD | GitHub Actions with build matrix |
-
----
+| Component      | Technology              |
+| -------------- | ----------------------- |
+| Runtime        | Electron                |
+| Authentication | msmc                    |
+| Game Launch    | minecraft-launcher-core |
+| Auto Updates   | electron-updater        |
+| Packaging      | electron-builder        |
+| CI/CD          | GitHub Actions          |
 
 ## License
 
-ISC © Lyam
+ISC License
+
+Copyright © Lyam
