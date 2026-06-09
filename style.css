@@ -220,23 +220,24 @@ body {
     align-items: center;
     padding: 20px 30px 0 30px;
     position: relative;
-    /* Essential for drag-area fix */
     z-index: 3;
     column-gap: 20px;
     overflow: visible;
-    pointer-events: none;
     flex-shrink: 0;
+    -webkit-app-region: drag;
 }
 
 .drag-area {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 28px;
-    z-index: 0;
-    -webkit-app-region: drag;
-    pointer-events: auto;
+    display: none;
+}
+
+.top-bar button,
+.top-bar select,
+.top-bar input,
+.top-bar .user-section,
+.top-bar .nav-links,
+.top-bar .window-controls {
+    -webkit-app-region: no-drag;
 }
 
 .user-section,
@@ -246,7 +247,6 @@ body {
 .window-controls,
 .window-controls * {
     z-index: 100;
-    pointer-events: auto;
     -webkit-app-region: no-drag;
 }
 
