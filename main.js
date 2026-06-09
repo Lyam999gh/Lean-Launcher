@@ -5,10 +5,9 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { loginAccount, getAuthAccounts, setActiveAuthAccount, removeAuthAccount } = require('./index.js');
 
-// --- GPU acceleration (safe flags — no stutter, no frame pacing issues) ---
+// --- GPU acceleration ---
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
 
 let mainWindow = null;
 
@@ -56,8 +55,10 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, 'index.html'));
-  win.show();
-  win.focus();
+  win.once('ready-to-show', () => {
+    win.show();
+    win.focus();
+  });
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });

@@ -2082,7 +2082,6 @@ async function initUI() {
     canvas.style.inset = '0';
     canvas.style.pointerEvents = 'none';
     canvas.style.zIndex = '0';
-    canvas.style.filter = 'blur(35px)';
     layer.appendChild(canvas);
 
     // Remove old DOM bubble elements if any exist
@@ -2116,8 +2115,9 @@ async function initUI() {
             sprite = document.createElement('canvas');
             sprite.width = sprite.height = d;
             const sctx = sprite.getContext('2d');
-            // Solid color circle — blur is applied via the canvas CSS filter
+            // Solid color circle — blur applied per-sprite to avoid GPU event interception on macOS
             sctx.fillStyle = bubbleColor;
+            sctx.filter = 'blur(35px)';
             sctx.beginPath();
             sctx.arc(key, key, key, 0, Math.PI * 2);
             sctx.fill();
