@@ -47,7 +47,6 @@ function createWindow() {
     frame: false,
     icon: iconPath,
     autoHideMenuBar: true,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -57,6 +56,8 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, 'index.html'));
+  win.show();
+  win.focus();
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
