@@ -1,17 +1,27 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeImage } = require('electron');
+
+// --- App identity (fixes Dock name, keychain label, and menu bar name on macOS) ---
+// Must be called BEFORE any require('./index.js') so both files see the same userData path
+app.setName('Lean Launcher');
+
 const { autoUpdater } = require('electron-updater');
 const { loginAccount, getAuthAccounts, setActiveAuthAccount, removeAuthAccount } = require('./index.js');
 
-// --- GPU acceleration ---
+// --- GPU acceleration (safe flags — no stutter, no frame pacing issues) ---
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
 
 let mainWindow = null;
 
 const appRoot = app.isPackaged ? app.getPath('userData') : __dirname;
+
+// Pass app root to preload via additionalArguments (more reliable
+// than env vars on macOS for child process inheritance)
+const appRootArg = `--app-root=${appRoot}`;
 
 function copyDirectoryContentsRecursive(sourceDir, targetDir) {
   if (!fs.existsSync(sourceDir)) return 0;
@@ -39,26 +49,36 @@ function copyDirectoryContentsRecursive(sourceDir, targetDir) {
 }
 
 function createWindow() {
-  const iconPath = path.join(__dirname, 'icon.png');
+  // icon.png is bundled via extraResources to Resources/icon.png in packaged builds,
+  // and lives alongside the source in dev mode.
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.png')
+    : path.join(__dirname, 'icon.png');
+  const iconNative = nativeImage.createFromPath(iconPath);
+
+  // Set Dock icon on macOS
+  if (process.platform === 'darwin' && !iconNative.isEmpty()) {
+    try {
+      app.dock.setIcon(iconNative);
+    } catch { /* ignore if dock not available (e.g. headless) */ }
+  }
+
   const win = new BrowserWindow({
     width: 950, height: 700,
     minWidth: 720, minHeight: 500,
     frame: false,
-    icon: iconPath,
+    icon: iconNative.isEmpty() ? iconPath : iconNative,
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
       backgroundThrottling: false,
+      additionalArguments: [appRootArg],
       preload: path.join(__dirname, 'preload.js')
     },
   });
   win.loadFile(path.join(__dirname, 'index.html'));
-  win.once('ready-to-show', () => {
-    win.show();
-    win.focus();
-  });
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });

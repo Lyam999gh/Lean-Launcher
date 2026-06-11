@@ -50,7 +50,7 @@ const PROFILE_ORDER = ['lightweight', 'balanced', 'full'];
 const userSection = document.getElementById('user-section'), playerHead = document.getElementById('player-head'), usernameEl = document.getElementById('player-name'), leanDesc = document.getElementById('leanDesc');
 const btnHome = document.getElementById('btn-home'), btnAbout = document.getElementById('btn-about'), btnInstances = document.getElementById('btn-instances'), btnSettings = document.getElementById('btn-settings'), homeView = document.getElementById('home-view'), aboutView = document.getElementById('about-view'), instancesView = document.getElementById('instances-view'), createVersionView = document.getElementById('create-version-view'), settingsView = document.getElementById('settings-view');
 
-const globTheme = document.getElementById('global-theme'), globLang = document.getElementById('global-language'), globCloseOnBoot = document.getElementById('global-close-on-boot'), globSimpleMode = document.getElementById('global-simple-mode'), globShowFpsWarning = document.getElementById('global-show-fps-warning');
+const globTheme = document.getElementById('global-theme'), globLang = document.getElementById('global-language'), globCloseOnBoot = document.getElementById('global-close-on-boot'), globSimpleMode = document.getElementById('global-simple-mode'), globShowFpsWarning = document.getElementById('global-show-fps-warning'), globAnimation = document.getElementById('global-animation');
 const setInstanceSelect = document.getElementById('settings-instance-select'), setRam = document.getElementById('set-ram'), setRamSlider = document.getElementById('set-ram-slider'), ramRemainingText = document.getElementById('ram-remaining-text'), setPreset = document.getElementById('set-preset'), setJvm = document.getElementById('set-jvm'), setJavaPath = document.getElementById('set-javapath');
 const toggleAdvancedBtn = document.getElementById('toggle-advanced'), advancedPanel = document.getElementById('advanced-settings-panel'), customArgsContainer = document.getElementById('custom-args-container'), playtimeText = document.getElementById('playtime-text'), playtimeTotalText = document.getElementById('playtime-text-total');
 const cancelLaunchButton = document.getElementById('cancel-launch');
@@ -88,9 +88,12 @@ let editingFileState = null;
 let currentInstanceFilesVersion = null;
 let suppressFileEditorBackdropClick = false;
 let totalSystemRamMb = null;
-// Bubble animation hooks — assigned inside initUI once canvas is ready
+// Animation hooks — assigned inside initUI once canvas is ready
 let startBubbles = () => {};
 let stopBubbles = () => {};
+let startRain = () => {};
+let stopRain = () => {};
+let applyAnimation = () => {};
 
 const i18n = {
     en: {
@@ -192,12 +195,17 @@ async function loadGlobalSettings() {
         if (g.simpleMode) {
             document.documentElement.setAttribute('data-simple', 'true');
             stopBubbles();
+            stopRain();
         } else {
             document.documentElement.removeAttribute('data-simple');
         }
     }
     if (globShowFpsWarning) {
         globShowFpsWarning.checked = g.showFpsWarning !== false;
+    }
+    if (globAnimation) {
+        globAnimation.value = g.animation || 'bubbles';
+        applyAnimation(globAnimation.value);
     }
     document.documentElement.setAttribute('data-theme', globTheme.value);
     applyTranslations();
@@ -210,15 +218,17 @@ function saveGlobalSettings() {
         language: globLang.value,
         closeOnBoot: Boolean(globCloseOnBoot?.checked),
         simpleMode: Boolean(globSimpleMode?.checked),
-        showFpsWarning: Boolean(globShowFpsWarning?.checked)
+        showFpsWarning: Boolean(globShowFpsWarning?.checked),
+        animation: globAnimation ? globAnimation.value : 'bubbles'
     };
     document.documentElement.setAttribute('data-theme', g.theme);
     if (g.simpleMode) {
         document.documentElement.setAttribute('data-simple', 'true');
         stopBubbles();
+        stopRain();
     } else {
         document.documentElement.removeAttribute('data-simple');
-        startBubbles();
+        applyAnimation(g.animation || 'bubbles');
     }
     applyTranslations();
     ipcRenderer.invoke('save-global-settings', g).catch(err => {
@@ -1059,6 +1069,7 @@ async function initUI() {
     globLang.addEventListener('change', saveGlobalSettings);
     globCloseOnBoot?.addEventListener('change', saveGlobalSettings);
     globShowFpsWarning?.addEventListener('change', saveGlobalSettings);
+    globAnimation?.addEventListener('change', () => { saveGlobalSettings(); applyAnimation(globAnimation.value); });
     
     setInstanceSelect.addEventListener('change', loadInstanceSettings);
     setInstanceSelect.addEventListener('change', loadInstanceSettings);
@@ -2082,6 +2093,9 @@ async function initUI() {
     canvas.style.inset = '0';
     canvas.style.pointerEvents = 'none';
     canvas.style.zIndex = '0';
+    canvas.style.filter = 'blur(35px)';
+    canvas.style.transition = 'opacity 0.8s ease';
+    canvas.style.opacity = '1';
     layer.appendChild(canvas);
 
     // Remove old DOM bubble elements if any exist
@@ -2115,9 +2129,8 @@ async function initUI() {
             sprite = document.createElement('canvas');
             sprite.width = sprite.height = d;
             const sctx = sprite.getContext('2d');
-            // Solid color circle — blur applied per-sprite to avoid GPU event interception on macOS
+            // Solid color circle — blur is applied via the canvas CSS filter
             sctx.fillStyle = bubbleColor;
-            sctx.filter = 'blur(35px)';
             sctx.beginPath();
             sctx.arc(key, key, key, 0, Math.PI * 2);
             sctx.fill();
@@ -2239,21 +2252,229 @@ async function initUI() {
         animId = requestAnimationFrame(updateBubblesCanvas);
     }
 
+    // Crossfade configuration
+    const XFADE_MS = 800; // CSS transition duration (must match style.transition)
+    let bubbleFadeTimer = null;
+    let rainFadeTimer = null;
+
     startBubbles = function() {
-        if (animId) return;
+        // Cancel any pending fade-out so opacity doesn't snap back to 0
+        if (bubbleFadeTimer) { clearTimeout(bubbleFadeTimer); bubbleFadeTimer = null; }
+        canvas.style.opacity = '1';
+        if (animId) return; // already running
         animId = requestAnimationFrame(updateBubblesCanvas);
     };
 
     stopBubbles = function() {
-        if (animId) {
-            cancelAnimationFrame(animId);
-            animId = null;
-        }
-        ctx.clearRect(0, 0, vw, vh);
+        canvas.style.opacity = '0';
+        if (bubbleFadeTimer) clearTimeout(bubbleFadeTimer);
+        bubbleFadeTimer = setTimeout(function() {
+            if (animId) {
+                cancelAnimationFrame(animId);
+                animId = null;
+            }
+            ctx.clearRect(0, 0, vw, vh);
+            bubbleFadeTimer = null;
+        }, XFADE_MS);
     };
 
-    // Start if not in simple mode
+    // Start bubbles by default (loadGlobalSettings will crossfade to rain if needed)
     if (!document.documentElement.hasAttribute('data-simple')) startBubbles();
+
+    // --- Rain animation effect (alternative to bubbles) ---
+    let rainActive = false;
+    let rainCanvas = null;
+    let rainCtx = null;
+    let rainDrops = [];
+    let rainSplashes = [];
+    let rainAnimId = null;
+    const MAX_RAIN_DROPS = 60;
+    const SPLASH_PARTICLES = 6;
+
+    function buildRainCanvas() {
+        if (rainCanvas) return;
+        rainCanvas = document.createElement('canvas');
+        rainCanvas.style.position = 'fixed';
+        rainCanvas.style.inset = '0';
+        rainCanvas.style.pointerEvents = 'none';
+        rainCanvas.style.zIndex = '0';
+        rainCanvas.style.opacity = '0';
+        rainCanvas.style.transition = 'opacity 0.8s ease';
+        layer.appendChild(rainCanvas);
+        rainCtx = rainCanvas.getContext('2d');
+        resizeRainCanvas();
+    }
+
+    function resizeRainCanvas() {
+        if (!rainCanvas) return;
+        const dprRain = Math.min(window.devicePixelRatio || 1, 2);
+        const maxDim = 2560;
+        const scale = Math.min(1, maxDim / Math.max(window.innerWidth * dprRain, window.innerHeight * dprRain));
+        rainCanvas.width = Math.round(window.innerWidth * dprRain * scale);
+        rainCanvas.height = Math.round(window.innerHeight * dprRain * scale);
+        rainCanvas.style.width = window.innerWidth + 'px';
+        rainCanvas.style.height = window.innerHeight + 'px';
+        rainCtx.setTransform(dprRain * scale, 0, 0, dprRain * scale, 0, 0);
+    }
+
+    function spawnRainDrop() {
+        const vwRain = window.innerWidth;
+        return {
+            x: Math.random() * vwRain,
+            y: -20 - Math.random() * 100,
+            speed: 4 + Math.random() * 6,
+            length: 8 + Math.random() * 16,
+            opacity: 0.15 + Math.random() * 0.35
+        };
+    }
+
+    function spawnSplash(x, y) {
+        const particles = [];
+        for (let i = 0; i < SPLASH_PARTICLES; i++) {
+            const angle = (Math.PI / SPLASH_PARTICLES) * i + (Math.random() - 0.5) * 0.6;
+            const force = 1 + Math.random() * 3;
+            particles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * force,
+                vy: -Math.sin(angle) * force - 1,
+                life: 1,
+                decay: 0.02 + Math.random() * 0.04
+            });
+        }
+        return particles;
+    }
+
+    const RAIN_COLORS = {
+        light: 'rgba(139,92,246,',
+        pastel: 'rgba(168,140,220,',
+        dark: 'rgba(168,85,247,',
+        space: 'rgba(100,180,255,',
+        midnight: 'rgba(100,150,220,',
+        grass: 'rgba(100,180,100,',
+        nether: 'rgba(220,80,80,',
+        end: 'rgba(200,180,100,',
+        bees: 'rgba(220,180,40,',
+        deepdark: 'rgba(80,160,180,',
+        cherry: 'rgba(240,150,180,',
+        default: 'rgba(139,92,246,'
+    };
+
+    function getRainColor() {
+        const theme = document.documentElement.getAttribute('data-theme') || 'light';
+        return (RAIN_COLORS[theme] || RAIN_COLORS.default);
+    }
+
+    function updateRainCanvas() {
+        if (!rainCtx || !rainActive) return;
+        const vwRain = window.innerWidth;
+        const vhRain = window.innerHeight;
+
+        rainCtx.clearRect(0, 0, vwRain, vhRain);
+        const colorBase = getRainColor();
+
+        // Draw drops
+        for (let i = rainDrops.length - 1; i >= 0; i--) {
+            const d = rainDrops[i];
+            d.y += d.speed;
+
+            rainCtx.strokeStyle = colorBase + (d.opacity) + ')';
+            rainCtx.lineWidth = 1;
+            rainCtx.beginPath();
+            rainCtx.moveTo(d.x, d.y);
+            rainCtx.lineTo(d.x, d.y + d.length);
+            rainCtx.stroke();
+
+            if (d.y > vhRain) {
+                // Splash at bottom
+                rainSplashes.push(...spawnSplash(d.x, vhRain));
+                rainDrops[i] = spawnRainDrop();
+            }
+        }
+
+        // Draw splashes
+        for (let i = rainSplashes.length - 1; i >= 0; i--) {
+            const s = rainSplashes[i];
+            s.x += s.vx;
+            s.y += s.vy;
+            s.life -= s.decay;
+
+            if (s.life <= 0) {
+                rainSplashes.splice(i, 1);
+                continue;
+            }
+
+            rainCtx.fillStyle = colorBase + (s.life * 0.5) + ')';
+            rainCtx.beginPath();
+            rainCtx.arc(s.x, s.y, 1.5 * s.life, 0, Math.PI * 2);
+            rainCtx.fill();
+        }
+
+        // Spawn new drops
+        while (rainDrops.length < MAX_RAIN_DROPS) {
+            rainDrops.push(spawnRainDrop());
+        }
+
+        rainAnimId = requestAnimationFrame(updateRainCanvas);
+    }
+
+    startRain = function() {
+        // Cancel any pending fade-out so opacity doesn't snap back to 0
+        if (rainFadeTimer) { clearTimeout(rainFadeTimer); rainFadeTimer = null; }
+        if (!rainActive) {
+            rainActive = true;
+            buildRainCanvas();
+            resizeRainCanvas();
+            rainDrops = [];
+            rainSplashes = [];
+            // Stagger drops evenly across the full screen height so rain is
+            // continuous from the very first frame — no "all at once" sheet effect.
+            const vhRain = window.innerHeight;
+            for (let i = 0; i < MAX_RAIN_DROPS; i++) {
+                const drop = spawnRainDrop();
+                drop.y = (vhRain * (i / MAX_RAIN_DROPS)) - (Math.random() * 20);
+                rainDrops.push(drop);
+            }
+            rainAnimId = requestAnimationFrame(updateRainCanvas);
+        }
+        if (rainCanvas) rainCanvas.style.opacity = '1';
+    };
+
+    stopRain = function() {
+        if (rainCanvas) rainCanvas.style.opacity = '0';
+        if (rainFadeTimer) clearTimeout(rainFadeTimer);
+        rainFadeTimer = setTimeout(function() {
+            rainActive = false;
+            if (rainAnimId) {
+                cancelAnimationFrame(rainAnimId);
+                rainAnimId = null;
+            }
+            if (rainCtx) {
+                rainCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+            }
+            rainDrops = [];
+            rainSplashes = [];
+            rainFadeTimer = null;
+        }, XFADE_MS);
+    };
+
+    applyAnimation = function(type) {
+        // Crossfade: both old and new canvases animate opacity simultaneously.
+        // CSS transition (0.8s ease) handles the visual easing curve.
+        if (type === 'rain') {
+            if (!document.documentElement.hasAttribute('data-simple')) startRain();
+            stopBubbles();
+        } else {
+            if (!document.documentElement.hasAttribute('data-simple')) startBubbles();
+            stopRain();
+        }
+    };
+
+    // Handle resize for rain canvas too
+    const origResizeHandler = window.onresize;
+    window.addEventListener('resize', () => {
+        if (rainActive) resizeRainCanvas();
+    }, { passive: true });
 
     // --- Auto-update event listeners ---
     if (typeof window.updateAPI !== 'undefined') {
