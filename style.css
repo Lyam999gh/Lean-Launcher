@@ -256,6 +256,7 @@ textarea,
 .window-controls,
 .window-controls * {
     z-index: 100;
+    pointer-events: auto;
     -webkit-app-region: no-drag;
 }
 
@@ -277,7 +278,6 @@ textarea,
     border-radius: 999px;
     transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1), background 0.4s ease, border-color 0.4s ease;
     overflow: hidden;
-    will-change: transform;
     z-index: 100;
 }
 
@@ -924,14 +924,12 @@ textarea,
     transform: translateY(16px);
     opacity: 1;
     transition: transform 0.26s ease;
-    will-change: transform;
 }
 
 #crash-report-modal .launcher-modal-card {
     transform: translateY(16px);
     opacity: 1;
     transition: transform 0.26s ease;
-    will-change: transform;
 }
 
 #confirm-delete-modal.visible .launcher-modal-card {
@@ -971,7 +969,6 @@ textarea,
     border-left-color: rgba(255, 255, 255, 0.12);
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25), 0 4px 16px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1);
     overflow: hidden;
-    will-change: transform, opacity;
     pointer-events: auto;
 }
 
@@ -1075,7 +1072,6 @@ textarea,
     transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.45s ease;
     opacity: 0;
     pointer-events: none;
-    will-change: transform, opacity;
     backface-visibility: hidden;
     transform: translateZ(0);
     overflow-y: auto;
@@ -1444,7 +1440,6 @@ select {
     transition: opacity 0.3s ease, transform 0.3s ease;
     overflow: visible;
     /* Allow native select dropdowns to overflow panel bounds */
-    will-change: transform, opacity;
 }
 
 /* Ensure glass inner items sit above the noise layer */
@@ -2362,7 +2357,6 @@ select {
     opacity: 1;
     transition: transform 0.26s ease;
     overflow: hidden;
-    will-change: transform;
     display: flex;
     flex-direction: column;
     pointer-events: auto;
@@ -2419,7 +2413,6 @@ select {
     color: var(--text);
     opacity: 0;
     pointer-events: none;
-    will-change: transform, opacity;
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -3423,8 +3416,9 @@ input:checked+.slider:before {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    opacity: 0;
     transform: translateY(16px);
-    transition: transform 0.28s ease;
+    transition: transform 0.28s ease, opacity 0.28s ease;
     pointer-events: auto;
 }
 
@@ -3464,6 +3458,7 @@ input:checked+.slider:before {
 
 .screenshots-modal.visible .screenshots-card {
     transform: translateY(0);
+    opacity: 1;
 }
 
 .screenshots-header {

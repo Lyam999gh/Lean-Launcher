@@ -2288,8 +2288,8 @@ async function initUI() {
     let rainDrops = [];
     let rainSplashes = [];
     let rainAnimId = null;
-    const MAX_RAIN_DROPS = 140;
-    const SPLASH_PARTICLES = 8;
+    const MAX_RAIN_DROPS = 100;
+    const SPLASH_PARTICLES = 6;
 
     // --- Storm system ---
     let clouds = [];
@@ -2348,8 +2348,9 @@ async function initUI() {
         initClouds();
     }
 
-    // --- Fog bank (blurry, always covers the top of the window) ---
+    // --- Fog bank (soft radial gradients — no shadowBlur for GPU performance) ---
     const MAX_CLOUDS = 9;
+    let cloudGradients = [];
 
     function spawnCloud(startX) {
         const vw = window.innerWidth;
@@ -2366,19 +2367,15 @@ async function initUI() {
     function initClouds() {
         clouds = [];
         const vw = window.innerWidth;
-        // Evenly spaced across full width so fog always covers the top
         for (let i = 0; i < MAX_CLOUDS; i++) {
             clouds.push(spawnCloud((vw / MAX_CLOUDS) * i));
         }
     }
 
     function drawClouds(sc) {
-        // Heavy blur matching the bubble effect (filter: blur(35px) ≈ shadowBlur 80)
-        rainCtx.shadowBlur = 80;
-        rainCtx.shadowColor = 'rgba(' + sc.cloud.join(',') + ',0.18)';
-
-        // Base fog strip — a wide, soft band across the entire top
         const vw = window.innerWidth;
+
+        // Base fog strip (linear gradient, no blur)
         const baseGrad = rainCtx.createLinearGradient(0, -40, 0, 180);
         baseGrad.addColorStop(0, 'rgba(' + sc.cloud.join(',') + ',0.09)');
         baseGrad.addColorStop(0.4, 'rgba(' + sc.cloud.join(',') + ',0.05)');
@@ -2386,27 +2383,24 @@ async function initUI() {
         rainCtx.fillStyle = baseGrad;
         rainCtx.fillRect(-20, -40, vw + 40, 200);
 
-        // Overlapping fog blobs for texture
-        for (const c of clouds) {
+        // Fog blobs — radial gradients naturally fade to 0 at edges (soft look, zero GPU blur cost)
+        for (let i = 0; i < clouds.length; i++) {
+            const c = clouds[i];
             const grad = rainCtx.createRadialGradient(c.x, c.y, c.w * 0.05, c.x, c.y, c.w * 0.65);
             grad.addColorStop(0, 'rgba(' + sc.cloud.join(',') + ',' + (c.opacity * 1.6) + ')');
             grad.addColorStop(0.6, 'rgba(' + sc.cloud.join(',') + ',' + c.opacity + ')');
             grad.addColorStop(1, 'rgba(' + sc.cloud.join(',') + ',0)');
-
             rainCtx.fillStyle = grad;
             rainCtx.beginPath();
             rainCtx.ellipse(c.x, c.y, c.w / 2, c.h / 2, 0, 0, Math.PI * 2);
             rainCtx.fill();
 
-            // Slow drift
             c.x += c.speed;
             if (c.x > window.innerWidth + c.w) {
                 c.x = -c.w - 40;
                 c.y = -80 + Math.random() * 50;
             }
         }
-        rainCtx.shadowBlur = 0;
-        rainCtx.shadowColor = 'transparent';
     }
 
     // --- Lightning ---
@@ -2460,8 +2454,8 @@ async function initUI() {
     function drawLightningBolt(points, alpha, sc) {
         if (points.length < 2) return;
 
-        // Outer glow
-        rainCtx.shadowBlur = 12;
+        // Outer glow (reduced blur — lightning is rare so moderate blur is fine)
+        rainCtx.shadowBlur = 6;
         rainCtx.shadowColor = 'rgba(' + sc.flash.join(',') + ',' + (alpha * 0.8) + ')';
         rainCtx.strokeStyle = 'rgba(' + sc.flash.join(',') + ',' + (alpha * 0.9) + ')';
         rainCtx.lineWidth = 2.5;
@@ -2475,7 +2469,7 @@ async function initUI() {
         rainCtx.stroke();
 
         // Bright white core
-        rainCtx.shadowBlur = 4;
+        rainCtx.shadowBlur = 2;
         rainCtx.shadowColor = 'rgba(255,255,255,' + (alpha * 0.7) + ')';
         rainCtx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.85) + ')';
         rainCtx.lineWidth = 1.2;
@@ -2504,7 +2498,7 @@ async function initUI() {
     }
 
     function drawRainDrop(d, sc) {
-        const segments = 4;
+        const segments = 3;
         const segLen = d.length / segments;
 
         for (let s = 0; s < segments; s++) {
@@ -2514,30 +2508,24 @@ async function initUI() {
             const botY = topY + segLen;
             const windX = d.wind * s * 1.5;
 
-            // Glow
-            rainCtx.shadowBlur = 3;
-            rainCtx.shadowColor = 'rgba(' + sc.rain.join(',') + ',' + (segOpacity * 0.5) + ')';
+            // No shadowBlur per segment — opacity gradient alone looks fine and costs nothing
             rainCtx.strokeStyle = 'rgba(' + sc.rain.join(',') + ',' + segOpacity + ')';
-            rainCtx.lineWidth = s === segments - 1 ? 2 : 1.5;
+            rainCtx.lineWidth = s === segments - 1 ? 2 : 1.3;
             rainCtx.beginPath();
             rainCtx.moveTo(d.x + windX, topY);
             rainCtx.lineTo(d.x + windX, botY);
             rainCtx.stroke();
 
-            // Bright white core on bottom segment only (most visible)
+            // Bright white core on bottom segment only
             if (s === segments - 1) {
-                rainCtx.shadowBlur = 0;
-                rainCtx.shadowColor = 'transparent';
-                rainCtx.strokeStyle = 'rgba(255,255,255,' + (segOpacity * 0.5) + ')';
-                rainCtx.lineWidth = 0.8;
+                rainCtx.strokeStyle = 'rgba(255,255,255,' + (segOpacity * 0.45) + ')';
+                rainCtx.lineWidth = 0.7;
                 rainCtx.beginPath();
                 rainCtx.moveTo(d.x + windX, topY + 1);
                 rainCtx.lineTo(d.x + windX, botY - 1);
                 rainCtx.stroke();
             }
         }
-        rainCtx.shadowBlur = 0;
-        rainCtx.shadowColor = 'transparent';
     }
 
     function spawnSplash(x, y) {
@@ -2599,14 +2587,10 @@ async function initUI() {
                 continue;
             }
 
-            rainCtx.shadowBlur = 2;
-            rainCtx.shadowColor = 'rgba(' + sc.rain.join(',') + ',0.3)';
             rainCtx.fillStyle = 'rgba(' + sc.rain.join(',') + ',' + (s.life * 0.45) + ')';
             rainCtx.beginPath();
             rainCtx.arc(s.x, s.y, 2.0 * s.life, 0, Math.PI * 2);
             rainCtx.fill();
-            rainCtx.shadowBlur = 0;
-            rainCtx.shadowColor = 'transparent';
         }
 
         // --- Lightning ---
