@@ -3225,32 +3225,35 @@ document.addEventListener('mousedown', (e) => {
     function isButton(el) {
         if (!el) return false;
         const tag = el.tagName.toLowerCase();
+        // Native semantic button elements
         if (tag === 'button') return true;
         if (tag === 'a' && el.hasAttribute('href')) return true;
-        if (tag === 'input' && ['button', 'submit', 'reset'].includes(el.type)) return true;
+        if (tag === 'input' && ['button', 'submit', 'reset', 'image'].includes(el.type)) return true;
         if (tag === 'select') return true;
+        // ARIA role
         if (el.getAttribute('role') === 'button') return true;
-        if (el.hasAttribute('onclick') || el.onclick) return true;
-        if (el.classList.contains('nav-btn')) return true;
-        if (el.classList.contains('win-btn')) return true;
-        if (el.classList.contains('custom-version-main-btn')) return true;
-        if (el.classList.contains('lean-version-main-btn')) return true;
-        if (el.classList.contains('custom-version-action-btn')) return true;
-        if (el.classList.contains('qa-toggle')) return true;
-        if (el.classList.contains('left-toolbar-btn')) return true;
-        if (el.classList.contains('advanced-btn')) return true;
+        // Inline onclick attribute
+        if (el.hasAttribute('onclick')) return true;
+        // onclick or onmousedown bound as a property (common in this codebase)
+        if (typeof el.onclick === 'function') return true;
+        if (typeof el.onmousedown === 'function') return true;
         return false;
     }
 
     function isClickable(el) {
         if (!el) return false;
         if (isButton(el)) return true;
+
         const style = window.getComputedStyle(el);
+        // cursor:pointer is the strongest visual signal of clickability
         if (style.cursor === 'pointer') return true;
+        // Focusable elements are typically interactive
         if (el.hasAttribute('tabindex')) return true;
-        // Check for click event listeners (heuristic)
-        const events = getEventListeners?.(el) || {};
-        if (events.click && events.click.length > 0) return true;
+
+        // Heuristic: class name contains interactive-action keywords
+        const cls = typeof el.className === 'string' ? el.className : '';
+        if (/\b(?:btn|button|click|action|toggle|select|picker|trigger|link|close|cancel|confirm|save|delete|edit|upload|download|play|launch|submit|dismiss|remove|copy|share|menu|tab|chip|pill)\b/i.test(cls)) return true;
+
         return false;
     }
 
@@ -3390,3 +3393,5 @@ document.addEventListener('mousedown', (e) => {
         );
     });
 })();
+
+document.addEventListener('DOMContentLoaded', setupCustomSelects);
