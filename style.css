@@ -3843,3 +3843,131 @@ input:checked+.slider:before {
     opacity: 1;
     transform: scale(1.06);
 }
+
+/* ============================================
+   DEBUG HOVER INSPECTOR
+   Toggle with Ctrl+Shift+D
+   ============================================ */
+
+#debug-inspector {
+    position: fixed;
+    z-index: 99999;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+    font-size: 11px;
+    line-height: 1.45;
+    background: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px 12px;
+    max-width: 340px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04) inset;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+#debug-inspector.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+#debug-inspector .di-tag {
+    display: inline-block;
+    background: #1f6feb;
+    color: #fff;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-weight: 700;
+    font-size: 10px;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+#debug-inspector .di-tag.button {
+    background: #238636;
+}
+
+#debug-inspector .di-tag.clickable {
+    background: #9e6a03;
+}
+
+#debug-inspector .di-tag.inert {
+    background: #6e7681;
+}
+
+#debug-inspector .di-id {
+    color: #79c0ff;
+    font-weight: 600;
+}
+
+#debug-inspector .di-classes {
+    color: #a5d6ff;
+    word-break: break-all;
+}
+
+#debug-inspector .di-row {
+    margin-bottom: 3px;
+}
+
+#debug-inspector .di-row:last-child {
+    margin-bottom: 0;
+}
+
+#debug-inspector .di-label {
+    color: #8b949e;
+    margin-right: 4px;
+}
+
+#debug-inspector .di-val {
+    color: #e6edf3;
+}
+
+#debug-inspector .di-dim {
+    color: #6e7681;
+}
+
+/* Debug toggle button (bottom-right corner, only when debug is on) */
+#debug-toggle-btn {
+    position: fixed;
+    bottom: 12px;
+    right: 12px;
+    z-index: 99998;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.6);
+    color: #0f0;
+    font-family: monospace;
+    font-size: 16px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+
+#debug-toggle-btn:hover {
+    background: rgba(0,0,0,0.85);
+    transform: scale(1.1);
+}
+
+#debug-toggle-btn.on {
+    color: #0f0;
+    border-color: rgba(0,255,0,0.3);
+}
+
+/* Highlight outline on hovered element (only in debug mode) */
+.debug-highlight {
+    outline: 2px dashed rgba(0, 255, 100, 0.65) !important;
+    outline-offset: 2px !important;
+    transition: outline 0.08s ease;
+}
+}

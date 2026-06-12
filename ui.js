@@ -3169,4 +3169,224 @@ document.addEventListener('mousedown', (e) => {
     if (updateModal?.classList.contains('visible')) hideModalGeneric(updateModal, 300);
     if (screenshotLightbox?.classList.contains('visible')) closeLightbox();
 });
-document.addEventListener('DOMContentLoaded', setupCustomSelects);
+// =============================================================================
+//  DEBUG HOVER INSPECTOR
+//  Toggle with Ctrl+Shift+D
+//  Shows element info under the cursor: tag, id, classes, whether it's a button
+//  or clickable, dimensions, computed cursor, and pointer-events.
+// =============================================================================
+
+(function initDebugInspector() {
+    let debugEnabled = false;
+    let inspectorEl = null;
+    let toggleBtn = null;
+    let hoveredEl = null;
+    let rafId = null;
+
+    function createInspectorDOM() {
+        if (inspectorEl) return;
+        inspectorEl = document.createElement('div');
+        inspectorEl.id = 'debug-inspector';
+        document.body.appendChild(inspectorEl);
+
+        toggleBtn = document.createElement('button');
+        toggleBtn.id = 'debug-toggle-btn';
+        toggleBtn.title = 'Debug Inspector (Ctrl+Shift+D)';
+        toggleBtn.textContent = '🐛';
+        toggleBtn.addEventListener('click', () => setDebugEnabled(!debugEnabled));
+        document.body.appendChild(toggleBtn);
+    }
+
+    function setDebugEnabled(on) {
+        debugEnabled = on;
+        if (toggleBtn) {
+            toggleBtn.style.display = on ? 'flex' : 'none';
+            toggleBtn.classList.toggle('on', on);
+        }
+        if (!on) {
+            hideInspector();
+            clearHighlight();
+        }
+    }
+
+    function hideInspector() {
+        if (!inspectorEl) return;
+        inspectorEl.classList.remove('visible');
+        inspectorEl.innerHTML = '';
+    }
+
+    function clearHighlight() {
+        if (hoveredEl) {
+            hoveredEl.classList.remove('debug-highlight');
+            hoveredEl = null;
+        }
+    }
+
+    function isButton(el) {
+        if (!el) return false;
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'button') return true;
+        if (tag === 'a' && el.hasAttribute('href')) return true;
+        if (tag === 'input' && ['button', 'submit', 'reset'].includes(el.type)) return true;
+        if (tag === 'select') return true;
+        if (el.getAttribute('role') === 'button') return true;
+        if (el.hasAttribute('onclick') || el.onclick) return true;
+        if (el.classList.contains('nav-btn')) return true;
+        if (el.classList.contains('win-btn')) return true;
+        if (el.classList.contains('custom-version-main-btn')) return true;
+        if (el.classList.contains('lean-version-main-btn')) return true;
+        if (el.classList.contains('custom-version-action-btn')) return true;
+        if (el.classList.contains('qa-toggle')) return true;
+        if (el.classList.contains('left-toolbar-btn')) return true;
+        if (el.classList.contains('advanced-btn')) return true;
+        return false;
+    }
+
+    function isClickable(el) {
+        if (!el) return false;
+        if (isButton(el)) return true;
+        const style = window.getComputedStyle(el);
+        if (style.cursor === 'pointer') return true;
+        if (el.hasAttribute('tabindex')) return true;
+        // Check for click event listeners (heuristic)
+        const events = getEventListeners?.(el) || {};
+        if (events.click && events.click.length > 0) return true;
+        return false;
+    }
+
+    function getElementPath(el) {
+        const parts = [];
+        let cur = el;
+        while (cur && cur !== document.body && cur !== document.documentElement) {
+            let desc = cur.tagName.toLowerCase();
+            if (cur.id) {
+                desc += '#' + cur.id;
+                parts.unshift(desc);
+                break;
+            }
+            if (cur.className && typeof cur.className === 'string') {
+                const cls = cur.className.trim().split(/\s+/).slice(0, 2).join('.');
+                if (cls) desc += '.' + cls;
+            }
+            parts.unshift(desc);
+            cur = cur.parentElement;
+        }
+        return parts.join(' > ');
+    }
+
+    function buildInspectorHTML(el) {
+        const tag = el.tagName.toLowerCase();
+        const id = el.id || '(none)';
+        const classes = (typeof el.className === 'string' && el.className.trim())
+            ? el.className.trim().split(/\s+/).filter(Boolean).join(' ')
+            : '(none)';
+        const rect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        const cursor = style.cursor;
+        const pointerEvents = style.pointerEvents;
+        const btn = isButton(el);
+        const clickable = isClickable(el);
+        const path = getElementPath(el);
+
+        let tags = `<span class="di-tag">${tag}</span>`;
+        if (btn) tags += ' <span class="di-tag button">BUTTON</span>';
+        else if (clickable) tags += ' <span class="di-tag clickable">CLICKABLE</span>';
+        if (pointerEvents === 'none') tags += ' <span class="di-tag inert">INERT</span>';
+
+        const dims = `${Math.round(rect.width)}×${Math.round(rect.height)}`;
+        const pos = `(${Math.round(rect.left)}, ${Math.round(rect.top)})`;
+
+        return `
+            <div class="di-row">${tags}</div>
+            <div class="di-row"><span class="di-label">id:</span><span class="di-id">${id}</span></div>
+            <div class="di-row"><span class="di-label">class:</span><span class="di-classes">${classes}</span></div>
+            <div class="di-row"><span class="di-label">size:</span><span class="di-val">${dims}</span> <span class="di-label">pos:</span><span class="di-val">${pos}</span></div>
+            <div class="di-row"><span class="di-label">cursor:</span><span class="di-val">${cursor}</span> <span class="di-label">ptr-events:</span><span class="di-val">${pointerEvents}</span></div>
+            <div class="di-row di-dim">${path}</div>
+        `;
+    }
+
+    function positionInspector(mx, my) {
+        if (!inspectorEl) return;
+        const iw = inspectorEl.offsetWidth;
+        const ih = inspectorEl.offsetHeight;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const gap = 14;
+
+        let left = mx + gap;
+        let top = my + gap;
+
+        // Flip horizontally if it would overflow right
+        if (left + iw > vw - 8) left = mx - iw - gap;
+        // Flip vertically if it would overflow bottom
+        if (top + ih > vh - 8) top = my - ih - gap;
+
+        // Clamp to viewport
+        left = Math.max(4, Math.min(left, vw - iw - 4));
+        top = Math.max(4, Math.min(top, vh - ih - 4));
+
+        inspectorEl.style.left = left + 'px';
+        inspectorEl.style.top = top + 'px';
+    }
+
+    function onMouseMove(e) {
+        if (!debugEnabled) return;
+        if (rafId) return;
+
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            const el = document.elementFromPoint(e.clientX, e.clientY);
+            if (!el || el === inspectorEl || el === toggleBtn || el.closest('#debug-inspector') || el.closest('#debug-toggle-btn')) {
+                hideInspector();
+                clearHighlight();
+                return;
+            }
+
+            if (el !== hoveredEl) {
+                clearHighlight();
+                hoveredEl = el;
+                el.classList.add('debug-highlight');
+            }
+
+            if (!inspectorEl) createInspectorDOM();
+            inspectorEl.innerHTML = buildInspectorHTML(el);
+            inspectorEl.classList.add('visible');
+            positionInspector(e.clientX, e.clientY);
+        });
+    }
+
+    function onKeyDown(e) {
+        // Toggle: Ctrl+Shift+D
+        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+            e.preventDefault();
+            setDebugEnabled(!debugEnabled);
+        }
+        // Also allow Escape to turn off
+        if (debugEnabled && e.key === 'Escape') {
+            e.preventDefault();
+            setDebugEnabled(false);
+        }
+    }
+
+    function onMouseLeave() {
+        if (!debugEnabled) return;
+        hideInspector();
+        clearHighlight();
+    }
+
+    // --- init ---
+    document.addEventListener('DOMContentLoaded', () => {
+        createInspectorDOM();
+        document.addEventListener('mousemove', onMouseMove, { passive: true });
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('mouseleave', onMouseLeave);
+        console.log(
+            '%c🐛 Debug Inspector ready %c| %cCtrl+Shift+D %cto toggle',
+            'font-size:13px;',
+            '',
+            'color:#79c0ff;font-weight:bold;',
+            ''
+        );
+    });
+})();
