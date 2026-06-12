@@ -88,6 +88,10 @@
         }
       ],
       "category": "public.app-category.games",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "publish": {
         "provider": "github"
       }
