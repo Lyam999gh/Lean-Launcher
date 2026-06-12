@@ -777,7 +777,7 @@ function setStatus(message, progress = 0) {
 const CHANGELOG_FALLBACK = [
   {
     version: '1.0.0',
-    date: 'May 31, 2026',
+    date: 'June 12, 2026',
     title: 'This is the first release of Lean Launcher.',
     description: '',
     features: [
@@ -2281,15 +2281,45 @@ async function initUI() {
     // Start bubbles by default (loadGlobalSettings will crossfade to rain if needed)
     if (!document.documentElement.hasAttribute('data-simple')) startBubbles();
 
-    // --- Rain animation effect (alternative to bubbles) ---
+    // --- Rain / Thunderstorm animation effect ---
     let rainActive = false;
     let rainCanvas = null;
     let rainCtx = null;
     let rainDrops = [];
     let rainSplashes = [];
     let rainAnimId = null;
-    const MAX_RAIN_DROPS = 60;
-    const SPLASH_PARTICLES = 6;
+    const MAX_RAIN_DROPS = 140;
+    const SPLASH_PARTICLES = 8;
+
+    // --- Storm system ---
+    let clouds = [];
+    let lightningTimer = 0;          // frames until next strike
+    let lightningBolts = [];         // active bolt paths [{segments, life, alpha}]
+    let flashAlpha = 0;              // full-screen white flash overlay
+    const LIGHTNING_MIN_GAP = 60;    // ~1 sec at 60fps
+    const LIGHTNING_MAX_GAP = 240;   // ~4 sec
+    const LIGHTNING_FLASH_DECAY = 0.06;
+
+    // Storm colors — darker, moodier versions of theme colors
+    const STORM_COLORS = {
+        light:    { rain: [180,160,220], cloud: [120,110,150], flash: [220,210,255] },
+        pastel:   { rain: [180,150,160], cloud: [130,110,120], flash: [240,220,220] },
+        dark:     { rain: [160,160,200], cloud: [60,60,80],     flash: [200,200,240] },
+        space:    { rain: [130,160,210], cloud: [30,35,60],     flash: [180,200,255] },
+        midnight: { rain: [120,150,210], cloud: [25,35,60],     flash: [170,200,240] },
+        grass:    { rain: [140,180,130], cloud: [50,70,40],     flash: [200,240,200] },
+        nether:   { rain: [200,110,90],  cloud: [70,30,25],     flash: [255,180,150] },
+        end:      { rain: [190,170,120], cloud: [60,50,40],     flash: [240,220,190] },
+        bees:     { rain: [210,180,100], cloud: [100,80,40],    flash: [255,230,180] },
+        deepdark: { rain: [100,160,170], cloud: [20,45,50],     flash: [160,220,220] },
+        cherry:   { rain: [230,160,180], cloud: [150,100,110],  flash: [255,220,230] },
+        default:  { rain: [160,150,200], cloud: [80,70,100],    flash: [220,210,255] }
+    };
+
+    function getStormColors() {
+        const theme = document.documentElement.getAttribute('data-theme') || 'light';
+        return STORM_COLORS[theme] || STORM_COLORS.default;
+    }
 
     function buildRainCanvas() {
         if (rainCanvas) return;
@@ -2315,17 +2345,199 @@ async function initUI() {
         rainCanvas.style.width = window.innerWidth + 'px';
         rainCanvas.style.height = window.innerHeight + 'px';
         rainCtx.setTransform(dprRain * scale, 0, 0, dprRain * scale, 0, 0);
+        initClouds();
     }
 
+    // --- Fog bank (blurry, always covers the top of the window) ---
+    const MAX_CLOUDS = 9;
+
+    function spawnCloud(startX) {
+        const vw = window.innerWidth;
+        return {
+            x: startX !== undefined ? startX : Math.random() * vw,
+            y: -80 + Math.random() * 50,
+            w: 280 + Math.random() * 320,
+            h: 80 + Math.random() * 100,
+            speed: 0.05 + Math.random() * 0.12,
+            opacity: 0.05 + Math.random() * 0.06
+        };
+    }
+
+    function initClouds() {
+        clouds = [];
+        const vw = window.innerWidth;
+        // Evenly spaced across full width so fog always covers the top
+        for (let i = 0; i < MAX_CLOUDS; i++) {
+            clouds.push(spawnCloud((vw / MAX_CLOUDS) * i));
+        }
+    }
+
+    function drawClouds(sc) {
+        // Heavy blur matching the bubble effect (filter: blur(35px) ≈ shadowBlur 80)
+        rainCtx.shadowBlur = 80;
+        rainCtx.shadowColor = 'rgba(' + sc.cloud.join(',') + ',0.18)';
+
+        // Base fog strip — a wide, soft band across the entire top
+        const vw = window.innerWidth;
+        const baseGrad = rainCtx.createLinearGradient(0, -40, 0, 180);
+        baseGrad.addColorStop(0, 'rgba(' + sc.cloud.join(',') + ',0.09)');
+        baseGrad.addColorStop(0.4, 'rgba(' + sc.cloud.join(',') + ',0.05)');
+        baseGrad.addColorStop(1, 'rgba(' + sc.cloud.join(',') + ',0)');
+        rainCtx.fillStyle = baseGrad;
+        rainCtx.fillRect(-20, -40, vw + 40, 200);
+
+        // Overlapping fog blobs for texture
+        for (const c of clouds) {
+            const grad = rainCtx.createRadialGradient(c.x, c.y, c.w * 0.05, c.x, c.y, c.w * 0.65);
+            grad.addColorStop(0, 'rgba(' + sc.cloud.join(',') + ',' + (c.opacity * 1.6) + ')');
+            grad.addColorStop(0.6, 'rgba(' + sc.cloud.join(',') + ',' + c.opacity + ')');
+            grad.addColorStop(1, 'rgba(' + sc.cloud.join(',') + ',0)');
+
+            rainCtx.fillStyle = grad;
+            rainCtx.beginPath();
+            rainCtx.ellipse(c.x, c.y, c.w / 2, c.h / 2, 0, 0, Math.PI * 2);
+            rainCtx.fill();
+
+            // Slow drift
+            c.x += c.speed;
+            if (c.x > window.innerWidth + c.w) {
+                c.x = -c.w - 40;
+                c.y = -80 + Math.random() * 50;
+            }
+        }
+        rainCtx.shadowBlur = 0;
+        rainCtx.shadowColor = 'transparent';
+    }
+
+    // --- Lightning ---
+    function generateLightningBolt(startX, startY, endX, endY, segments) {
+        const points = [{ x: startX, y: startY }];
+        const dx = (endX - startX) / segments;
+        const dy = (endY - startY) / segments;
+
+        for (let i = 1; i < segments; i++) {
+            const jitterX = (Math.random() - 0.5) * 60;
+            const jitterY = (Math.random() - 0.5) * 20;
+            points.push({
+                x: startX + dx * i + jitterX,
+                y: startY + dy * i + jitterY
+            });
+        }
+        points.push({ x: endX, y: endY });
+        return points;
+    }
+
+    function triggerLightning(sc) {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const startX = Math.random() * vw;
+        const endX = startX + (Math.random() - 0.5) * 200;
+        const endY = vh * (0.3 + Math.random() * 0.5);
+
+        // Main bolt
+        const mainBolt = generateLightningBolt(startX, 0, endX, endY, 8 + Math.floor(Math.random() * 6));
+
+        // Sometimes a branch bolt
+        const branches = [];
+        if (Math.random() < 0.6) {
+            const branchStart = mainBolt[Math.floor(mainBolt.length * 0.3 + Math.random() * 0.3)];
+            const branchEndX = branchStart.x + (Math.random() - 0.5) * 180;
+            const branchEndY = endY * (0.5 + Math.random() * 0.5);
+            branches.push(generateLightningBolt(branchStart.x, branchStart.y, branchEndX, branchEndY, 4 + Math.floor(Math.random() * 4)));
+        }
+
+        lightningBolts.push({
+            main: mainBolt,
+            branches: branches,
+            life: 1.0,
+            decay: 0.06 + Math.random() * 0.04
+        });
+
+        // Trigger flash
+        flashAlpha = 0.15 + Math.random() * 0.2;
+    }
+
+    function drawLightningBolt(points, alpha, sc) {
+        if (points.length < 2) return;
+
+        // Outer glow
+        rainCtx.shadowBlur = 12;
+        rainCtx.shadowColor = 'rgba(' + sc.flash.join(',') + ',' + (alpha * 0.8) + ')';
+        rainCtx.strokeStyle = 'rgba(' + sc.flash.join(',') + ',' + (alpha * 0.9) + ')';
+        rainCtx.lineWidth = 2.5;
+        rainCtx.lineCap = 'round';
+        rainCtx.lineJoin = 'round';
+        rainCtx.beginPath();
+        rainCtx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            rainCtx.lineTo(points[i].x, points[i].y);
+        }
+        rainCtx.stroke();
+
+        // Bright white core
+        rainCtx.shadowBlur = 4;
+        rainCtx.shadowColor = 'rgba(255,255,255,' + (alpha * 0.7) + ')';
+        rainCtx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.85) + ')';
+        rainCtx.lineWidth = 1.2;
+        rainCtx.beginPath();
+        rainCtx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            rainCtx.lineTo(points[i].x, points[i].y);
+        }
+        rainCtx.stroke();
+
+        rainCtx.shadowBlur = 0;
+        rainCtx.shadowColor = 'transparent';
+    }
+
+    // --- Rain drops (with top-to-bottom fade) ---
     function spawnRainDrop() {
         const vwRain = window.innerWidth;
         return {
             x: Math.random() * vwRain,
-            y: -20 - Math.random() * 100,
-            speed: 4 + Math.random() * 6,
-            length: 8 + Math.random() * 16,
-            opacity: 0.15 + Math.random() * 0.35
+            y: -20 - Math.random() * 120,
+            speed: 3.5 + Math.random() * 8,
+            length: 14 + Math.random() * 26,
+            opacity: 0.35 + Math.random() * 0.45,
+            wind: (Math.random() - 0.5) * 0.6  // slight sideways drift
         };
+    }
+
+    function drawRainDrop(d, sc) {
+        const segments = 4;
+        const segLen = d.length / segments;
+
+        for (let s = 0; s < segments; s++) {
+            // Fade IN from top to bottom: top invisible, bottom visible
+            const segOpacity = d.opacity * (s / segments) * ((s + 1) / (segments + 1));
+            const topY = d.y + s * segLen;
+            const botY = topY + segLen;
+            const windX = d.wind * s * 1.5;
+
+            // Glow
+            rainCtx.shadowBlur = 3;
+            rainCtx.shadowColor = 'rgba(' + sc.rain.join(',') + ',' + (segOpacity * 0.5) + ')';
+            rainCtx.strokeStyle = 'rgba(' + sc.rain.join(',') + ',' + segOpacity + ')';
+            rainCtx.lineWidth = s === segments - 1 ? 2 : 1.5;
+            rainCtx.beginPath();
+            rainCtx.moveTo(d.x + windX, topY);
+            rainCtx.lineTo(d.x + windX, botY);
+            rainCtx.stroke();
+
+            // Bright white core on bottom segment only (most visible)
+            if (s === segments - 1) {
+                rainCtx.shadowBlur = 0;
+                rainCtx.shadowColor = 'transparent';
+                rainCtx.strokeStyle = 'rgba(255,255,255,' + (segOpacity * 0.5) + ')';
+                rainCtx.lineWidth = 0.8;
+                rainCtx.beginPath();
+                rainCtx.moveTo(d.x + windX, topY + 1);
+                rainCtx.lineTo(d.x + windX, botY - 1);
+                rainCtx.stroke();
+            }
+        }
+        rainCtx.shadowBlur = 0;
+        rainCtx.shadowColor = 'transparent';
     }
 
     function spawnSplash(x, y) {
@@ -2345,48 +2557,31 @@ async function initUI() {
         return particles;
     }
 
-    const RAIN_COLORS = {
-        light: 'rgba(139,92,246,',
-        pastel: 'rgba(168,140,220,',
-        dark: 'rgba(168,85,247,',
-        space: 'rgba(100,180,255,',
-        midnight: 'rgba(100,150,220,',
-        grass: 'rgba(100,180,100,',
-        nether: 'rgba(220,80,80,',
-        end: 'rgba(200,180,100,',
-        bees: 'rgba(220,180,40,',
-        deepdark: 'rgba(80,160,180,',
-        cherry: 'rgba(240,150,180,',
-        default: 'rgba(139,92,246,'
-    };
-
-    function getRainColor() {
-        const theme = document.documentElement.getAttribute('data-theme') || 'light';
-        return (RAIN_COLORS[theme] || RAIN_COLORS.default);
-    }
-
     function updateRainCanvas() {
         if (!rainCtx || !rainActive) return;
         const vwRain = window.innerWidth;
         const vhRain = window.innerHeight;
 
+        // Subtle dark overlay for storm atmosphere
         rainCtx.clearRect(0, 0, vwRain, vhRain);
-        const colorBase = getRainColor();
+        const sc = getStormColors();
 
-        // Draw drops
+        // Draw clouds (behind rain)
+        drawClouds(sc);
+
+        // Draw rain drops with opacity gradient
         for (let i = rainDrops.length - 1; i >= 0; i--) {
             const d = rainDrops[i];
             d.y += d.speed;
+            d.x += d.wind;
 
-            rainCtx.strokeStyle = colorBase + (d.opacity) + ')';
-            rainCtx.lineWidth = 1;
-            rainCtx.beginPath();
-            rainCtx.moveTo(d.x, d.y);
-            rainCtx.lineTo(d.x, d.y + d.length);
-            rainCtx.stroke();
+            drawRainDrop(d, sc);
+
+            // Wrap around if blown off screen
+            if (d.x < -20) d.x = vwRain + 20;
+            if (d.x > vwRain + 20) d.x = -20;
 
             if (d.y > vhRain) {
-                // Splash at bottom
                 rainSplashes.push(...spawnSplash(d.x, vhRain));
                 rainDrops[i] = spawnRainDrop();
             }
@@ -2404,10 +2599,48 @@ async function initUI() {
                 continue;
             }
 
-            rainCtx.fillStyle = colorBase + (s.life * 0.5) + ')';
+            rainCtx.shadowBlur = 2;
+            rainCtx.shadowColor = 'rgba(' + sc.rain.join(',') + ',0.3)';
+            rainCtx.fillStyle = 'rgba(' + sc.rain.join(',') + ',' + (s.life * 0.45) + ')';
             rainCtx.beginPath();
-            rainCtx.arc(s.x, s.y, 1.5 * s.life, 0, Math.PI * 2);
+            rainCtx.arc(s.x, s.y, 2.0 * s.life, 0, Math.PI * 2);
             rainCtx.fill();
+            rainCtx.shadowBlur = 0;
+            rainCtx.shadowColor = 'transparent';
+        }
+
+        // --- Lightning ---
+        lightningTimer--;
+
+        // Trigger new lightning randomly (more frequent strikes)
+        if (lightningTimer <= 0 && Math.random() < 0.08) {
+            triggerLightning(sc);
+            lightningTimer = LIGHTNING_MIN_GAP + Math.floor(Math.random() * (LIGHTNING_MAX_GAP - LIGHTNING_MIN_GAP));
+        }
+        if (lightningTimer <= 0) lightningTimer = 60; // safety reset
+
+        // Draw active lightning bolts
+        for (let i = lightningBolts.length - 1; i >= 0; i--) {
+            const bolt = lightningBolts[i];
+            bolt.life -= bolt.decay;
+
+            if (bolt.life <= 0) {
+                lightningBolts.splice(i, 1);
+                continue;
+            }
+
+            drawLightningBolt(bolt.main, bolt.life, sc);
+            for (const branch of bolt.branches) {
+                drawLightningBolt(branch, bolt.life * 0.7, sc);
+            }
+        }
+
+        // Full-screen flash overlay
+        if (flashAlpha > 0.001) {
+            rainCtx.fillStyle = 'rgba(' + sc.flash.join(',') + ',' + flashAlpha + ')';
+            rainCtx.fillRect(0, 0, vwRain, vhRain);
+            flashAlpha -= LIGHTNING_FLASH_DECAY;
+            if (flashAlpha < 0) flashAlpha = 0;
         }
 
         // Spawn new drops
@@ -2419,7 +2652,6 @@ async function initUI() {
     }
 
     startRain = function() {
-        // Cancel any pending fade-out so opacity doesn't snap back to 0
         if (rainFadeTimer) { clearTimeout(rainFadeTimer); rainFadeTimer = null; }
         if (!rainActive) {
             rainActive = true;
@@ -2427,8 +2659,10 @@ async function initUI() {
             resizeRainCanvas();
             rainDrops = [];
             rainSplashes = [];
-            // Stagger drops evenly across the full screen height so rain is
-            // continuous from the very first frame — no "all at once" sheet effect.
+            lightningBolts = [];
+            flashAlpha = 0;
+            lightningTimer = 60 + Math.floor(Math.random() * 200);
+
             const vhRain = window.innerHeight;
             for (let i = 0; i < MAX_RAIN_DROPS; i++) {
                 const drop = spawnRainDrop();

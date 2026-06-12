@@ -5,12 +5,12 @@
     "closeOnBoot": false,
     "simpleMode": false,
     "showFpsWarning": true,
-    "animation": "bubbles"
+    "animation": "rain"
   },
   "1.21.11": {
-    "ram": "10240",
+    "ram": "4096",
     "preset": "default",
-    "jvmArgs": "",
+    "jvmArgs": [],
     "javaPath": "",
     "playtime": 0,
     "baseVersion": "1.21.11",

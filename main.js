@@ -406,8 +406,19 @@ ipcMain.handle('login-offline', async (_, username) => {
 });
 
 ipcMain.handle('read-changelog', () => {
+  // In packaged builds, changelog.json is bundled inside the ASAR archive
+  // alongside the source files, so __dirname still works. In dev mode,
+  // __dirname is the project root.
   const changelogPath = path.join(__dirname, 'changelog.json');
-  if (!fs.existsSync(changelogPath)) return [];
+  if (!fs.existsSync(changelogPath)) {
+    // Fallback: try resourcesPath (extraResources) for non-ASAR packaging
+    const fallbackPath = path.join(process.resourcesPath || __dirname, 'changelog.json');
+    if (!fs.existsSync(fallbackPath)) return [];
+    try {
+      const data = JSON.parse(fs.readFileSync(fallbackPath, 'utf-8'));
+      return Array.isArray(data) ? data : [];
+    } catch { return []; }
+  }
   try {
     const data = JSON.parse(fs.readFileSync(changelogPath, 'utf-8'));
     return Array.isArray(data) ? data : [];
