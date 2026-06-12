@@ -34,7 +34,7 @@
   } catch (e) { /* ignore — theme will default to 'light' */ }
 
   // --- Phase 3: expose API (partial exposure if modules failed) ---
-  const api = { initialTheme };
+  const api = { initialTheme, platform: process.platform };
 
   if (ipcRenderer) {
     const ALLOWED_INVOKES = new Set([

@@ -1,7 +1,26 @@
 /* --- THEME ENGINE --- */
 
+/* --- Font fallback system ---
+   Google Fonts (Poppins, Inter) are the primary typefaces. When offline,
+   the browser falls back to locally-installed system fonts with similar
+   metrics to prevent layout shift and hitbox misalignment. ----------- */
+@font-face {
+    font-family: 'Poppins';
+    font-weight: 600 800;
+    font-display: fallback;
+    src: local('Segoe UI'), local('System-ui'), local('Ubuntu'), local('sans-serif');
+    size-adjust: 102%;
+}
+@font-face {
+    font-family: 'Inter';
+    font-weight: 400 600;
+    font-display: fallback;
+    src: local('Segoe UI'), local('Roboto'), local('System-ui'), local('Ubuntu'), local('sans-serif');
+    size-adjust: 100%;
+}
+
 /* Smooth theme transitions on all color-aware elements */
-body, .top-bar, .nav-links, .user-section, .window-controls,
+body, .nav-links, .user-section, .window-controls,
 .main-content, .launcher-modal, .screenshots-card,
 .login-btn, .nav-btn, .nav-indicator, .win-btn,
 input, select, textarea, button, .custom-select__button, .custom-select__list,
@@ -223,24 +242,12 @@ body {
     height: 100vh;
 }
 
-.top-bar {
-    min-height: 84px;
-    background: transparent;
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    padding: 20px 30px 0 30px;
-    position: relative;
-    z-index: 3;
-    column-gap: 20px;
-    overflow: visible;
-    pointer-events: none;
-    flex-shrink: 0;
-}
-
 .drag-area {
-    position: absolute;
-    inset: 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100px;
     z-index: 0;
     -webkit-app-region: drag;
     pointer-events: auto;
@@ -268,28 +275,55 @@ body {
     position: fixed;
     top: 20px;
     background: var(--panel-bg);
-    backdrop-filter: blur(20px) saturate(130%) brightness(1);
-    -webkit-backdrop-filter: blur(20px) saturate(130%) brightness(1);
     border: 1px solid var(--panel-border);
     box-shadow: var(--panel-shadow);
     border-radius: 999px;
     transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1), background 0.4s ease, border-color 0.4s ease;
     overflow: hidden;
-    will-change: transform;
     z-index: 100;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 .user-section {
     left: 30px;
+    backdrop-filter: saturate(130%) brightness(1.04);
+    -webkit-backdrop-filter: saturate(130%) brightness(1.04);
 }
 
 .nav-links {
     left: 50%;
     transform: translateX(-50%);
+    /* No blur — keeps page titles underneath sharp and readable */
+    backdrop-filter: saturate(130%) brightness(1.08);
+    -webkit-backdrop-filter: saturate(130%) brightness(1.08);
 }
 
 .window-controls {
     right: 30px;
+    backdrop-filter: saturate(130%) brightness(1.04);
+    -webkit-backdrop-filter: saturate(130%) brightness(1.04);
+}
+
+/* --- Linux GPU compositor safeguard ---
+   backdrop-filter on position:fixed elements causes hit-test desync
+   with Mesa/AMD/Intel open-source drivers. Disable it on Linux and
+   use a slightly more opaque solid background as fallback. ------- */
+[data-os="linux"] .user-section,
+[data-os="linux"] .nav-links,
+[data-os="linux"] .window-controls {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--modal-bg);
+}
+[data-os="linux"] .win-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+[data-os="linux"] .left-toolbar-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--modal-bg);
 }
 
 /* Glass Shader — top-left bright edge + diagonal sheen */
@@ -349,6 +383,10 @@ body {
     cursor: pointer;
     transition: 0.15s ease;
     flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 .win-btn:hover {
@@ -409,8 +447,6 @@ body {
     width: 0;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px) brightness(1.2);
-    -webkit-backdrop-filter: blur(10px) brightness(1.2);
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     opacity: 0;
@@ -431,6 +467,10 @@ body {
     border-radius: 999px;
     transition: opacity 0.2s ease, transform 0.2s ease;
     white-space: nowrap;
+    position: relative;
+    z-index: 1;
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 .nav-btn.active,
@@ -605,8 +645,9 @@ body {
     margin: 0 auto;
     border-radius: 28px;
     background: var(--panel-bg);
-    backdrop-filter: blur(40px) saturate(150%);
-    -webkit-backdrop-filter: blur(40px) saturate(150%);
+    backdrop-filter: saturate(150%) brightness(1.02);
+    -webkit-backdrop-filter: saturate(150%) brightness(1.02);
+    isolation: isolate;
     border: 1px solid var(--panel-border);
     border-top-color: rgba(255, 255, 255, 0.2);
     border-left-color: rgba(255, 255, 255, 0.15);
@@ -1424,8 +1465,11 @@ select {
     position: relative;
     /* for shader */
     background: var(--panel-bg);
-    backdrop-filter: blur(20px) saturate(130%) brightness(1);
-    -webkit-backdrop-filter: blur(20px) saturate(130%) brightness(1);
+    /* No blur — prevents Chromium backdrop-filter child-text blur bug.
+       Frosted look is achieved via the ::before shader gradient instead. */
+    backdrop-filter: saturate(130%) brightness(1.02);
+    -webkit-backdrop-filter: saturate(130%) brightness(1.02);
+    isolation: isolate;
     border: 1px solid var(--panel-border);
     border-radius: 30px;
     width: min(90%, 700px);
@@ -2463,6 +2507,10 @@ select {
     margin-bottom: clamp(8px, 1.5vh, 14px);
     transition: 0.2s;
     flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 .login-btn {
@@ -3342,7 +3390,10 @@ input:checked+.slider:before {
     cursor: pointer;
     transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
     position: relative;
+    z-index: 1;
     overflow: hidden;
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 .left-toolbar-btn:hover {
@@ -3969,5 +4020,4 @@ input:checked+.slider:before {
     outline: 2px dashed rgba(0, 255, 100, 0.65) !important;
     outline-offset: 2px !important;
     transition: outline 0.08s ease;
-}
 }
