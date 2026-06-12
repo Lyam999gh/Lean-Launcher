@@ -26,3 +26,4 @@ dist/
 # User data (auth tokens, settings)
 auth-cache.json
 saved-skins/
+LeanLauncher/

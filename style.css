@@ -182,21 +182,17 @@ body {
     overflow: hidden;
     height: 100vh;
     transition: background 0.4s ease, color 0.4s ease;
-    user-select: none;
-    -webkit-user-select: none;
+    -webkit-app-region: no-drag;
 }
 
-/* Allow text selection ONLY on editable fields */
-input[type="text"],
-input[type="password"],
-input[type="email"],
-input[type="search"],
-input[type="number"],
-textarea,
-[contenteditable="true"],
-.file-editor-content {
-    user-select: text;
-    -webkit-user-select: text;
+/* Prevent text selection on UI display text (inputs remain selectable) */
+.hero h1, .hero p, .launch-main-text, .username,
+.nav-btn, .settings-title, .version-label,
+.left-toolbar-label, .playtime-banner, h3, label,
+.custom-version-main-btn, .lean-version-main-btn,
+.screenshots-header h3, .whats-new-meta, .bar-title {
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 #bubbleLayer {
@@ -238,6 +234,7 @@ textarea,
     z-index: 3;
     column-gap: 20px;
     overflow: visible;
+    pointer-events: none;
     flex-shrink: 0;
 }
 
@@ -278,6 +275,7 @@ textarea,
     border-radius: 999px;
     transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1), background 0.4s ease, border-color 0.4s ease;
     overflow: hidden;
+    will-change: transform;
     z-index: 100;
 }
 
