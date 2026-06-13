@@ -67,9 +67,13 @@ Lean Launcher is designed to simplify the Minecraft experience while providing p
 1. Download the `.dmg` from the latest release.
 2. Open the downloaded file.
 3. Drag `Lean Launcher.app` into the **Applications** folder.
-4. If macOS blocks the application on first launch, open **System Settings → Privacy & Security**.
-5. Select **Open Anyway** for Lean Launcher.
-6. Confirm the prompt.
+4. Open **Terminal** and run the following command to clear the quarantine attribute:
+
+```bash
+xattr -c /Applications/Lean\ Launcher.app
+```
+
+5. Launch Lean Launcher from your Applications folder or Spotlight.
 
 ### Linux
 

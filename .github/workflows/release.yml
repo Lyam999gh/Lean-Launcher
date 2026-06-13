@@ -47,6 +47,7 @@ jobs:
       - name: Build & Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           if [ "${{ matrix.target }}" = "linux" ]; then
             npx electron-builder --linux --x64 --publish always

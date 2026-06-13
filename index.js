@@ -723,15 +723,50 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
     let javaPath = instanceSettings?.javaPath || '';
     if (!javaPath || !fs.existsSync(javaPath)) {
         const { execSync, execFileSync } = require('child_process');
-        try {
-            javaPath = execFileSync('which', ['java'], { encoding: 'utf-8' }).trim();
-        } catch {
-            try { javaPath = execSync('which java 2>/dev/null || echo /usr/bin/java', { encoding: 'utf-8' }).trim(); } catch { javaPath = '/usr/bin/java'; }
+
+        // macOS: try java_home first (handles JDK installations correctly)
+        if (process.platform === 'darwin') {
+            try {
+                javaPath = execFileSync('/usr/libexec/java_home', ['-v', '17'], { encoding: 'utf-8', timeout: 5000 }).trim();
+                if (javaPath) javaPath = path.join(javaPath, 'bin', 'java');
+            } catch {
+                try {
+                    javaPath = execFileSync('/usr/libexec/java_home', [], { encoding: 'utf-8', timeout: 5000 }).trim();
+                    if (javaPath) javaPath = path.join(javaPath, 'bin', 'java');
+                } catch { /* fall through */ }
+            }
         }
+
+        // Try `which java` (works on most Unix systems)
+        if (!javaPath || !fs.existsSync(javaPath)) {
+            try {
+                javaPath = execFileSync('which', ['java'], { encoding: 'utf-8' }).trim();
+            } catch {
+                try { javaPath = execSync('which java 2>/dev/null || echo /usr/bin/java', { encoding: 'utf-8' }).trim(); } catch { javaPath = process.platform === 'win32' ? 'java.exe' : 'java'; }
+            }
+        }
+
+        // macOS Homebrew fallback paths (both architectures)
+        if (!fs.existsSync(javaPath) && process.platform === 'darwin') {
+            const macOSFallbackPaths = [
+                '/opt/homebrew/bin/java',          // Apple Silicon Homebrew
+                '/usr/local/bin/java',             // Intel Homebrew
+                '/opt/homebrew/opt/openjdk@17/bin/java',
+                '/usr/local/opt/openjdk@17/bin/java',
+                '/opt/homebrew/opt/openjdk@21/bin/java',
+                '/usr/local/opt/openjdk@21/bin/java'
+            ];
+            for (const candidate of macOSFallbackPaths) {
+                if (fs.existsSync(candidate)) { javaPath = candidate; break; }
+            }
+        }
+
+        // Unix: scan /usr/lib/jvm for Java installations
         if (!fs.existsSync(javaPath) && process.platform !== 'win32') {
             try {
                 const result = execFileSync('find', ['/usr/lib/jvm', '-name', 'java', '-type', 'f'], { encoding: 'utf-8', timeout: 5000 });
-                javaPath = result.split('\n')[0]?.trim() || javaPath;
+                const firstMatch = result.split('\n')[0]?.trim();
+                if (firstMatch) javaPath = firstMatch;
             } catch {}
         }
     }

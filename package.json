@@ -12,6 +12,7 @@
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "build:all": "electron-builder --win --mac --linux",
+    "build:dir": "electron-builder --dir",
     "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [],
@@ -44,6 +45,7 @@
       "ui.js",
       "style.css",
       "package.json",
+      "changelog.json",
       "icon.png",
       "lib/**/*",
       "mod-profiles/**/*"
@@ -68,6 +70,7 @@
         }
       ],
       "icon": "icon.png",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "publish": {
         "provider": "github"
       }
@@ -89,6 +92,12 @@
         }
       ],
       "category": "public.app-category.games",
+      "identity": null,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "publish": {
         "provider": "github"
       }
@@ -110,6 +119,7 @@
         }
       ],
       "category": "Game",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "publish": {
         "provider": "github"
       }

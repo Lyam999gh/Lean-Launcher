@@ -5,6 +5,7 @@ minecraft/instances/*/
 desktop.ini
 Thumbs.db
 .DS_Store
+._*
 
 # Node / runtime
 node_modules/
@@ -25,3 +26,4 @@ dist/
 # User data (auth tokens, settings)
 auth-cache.json
 saved-skins/
+LeanLauncher/
