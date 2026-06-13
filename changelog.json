@@ -1,5 +1,48 @@
 [
   {
+    "version": "1.0.1",
+    "date": "June 13, 2026",
+    "title": "Stability & UX fixes, CI/CD integration.",
+    "description": "",
+    "features": [
+      {
+        "title": "Bug Fixes",
+        "items": [
+          "Fixed preload crash in production builds (duplicate api declaration, app module import)",
+          "Fixed FPS warning modal stealing clicks from login/modal z-index layers",
+          "Fixed DOMContentLoaded race condition with ES module scripts in ASAR",
+          "Fixed Canvas 2D desynchronized context causing drawImage crashes in production",
+          "Fixed button hitbox alignment and text blur in production builds",
+          "Fixed nav pill overlap with content area"
+        ]
+      },
+      {
+        "title": "UX Improvements",
+        "items": [
+          "Crossfade transitions when switching between Bubbles and Rain animations",
+          "Rain animation with object-pooled drops, volumetric cloud deck, themed lightning",
+          "Performance-optimized storm rendering (80 drops, 3 blur clouds)",
+          "Added padding-top to content area to prevent page overlap"
+        ]
+      },
+      {
+        "title": "macOS Identity",
+        "items": [
+          "Dock, menu bar, and keychain now show 'Lean Launcher' instead of 'Electron'",
+          "Custom Lean Launcher icon visible in Dock, app switcher, and About panel",
+          "App root path passed via --app-root argument for reliable cross-process resolution"
+        ]
+      },
+      {
+        "title": "CI/CD",
+        "items": [
+          "GitHub Actions workflow for multi-platform builds (Windows, macOS x64/arm64, Linux)",
+          "Automatic GitHub Release publishing via electron-builder"
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.0.0",
     "date": "June 12, 2026",
     "title": "This is the first release of Lean Launcher.",
