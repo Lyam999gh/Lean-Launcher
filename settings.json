@@ -3,7 +3,9 @@
     "theme": "dark",
     "language": "en",
     "closeOnBoot": false,
-    "simpleMode": false
+    "simpleMode": false,
+    "showFpsWarning": true,
+    "animation": "rain"
   },
   "1.21.11": {
     "ram": "10240",

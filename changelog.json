@@ -22,6 +22,13 @@
           "Multiple version targets and profile options",
           "Ready for lightweight and customizable setups"
         ]
+      },
+      {
+        "title": "macOS Enhancements",
+        "items": [
+          "Dock, menu bar, and keychain now show 'Lean Launcher' instead of 'Electron'",
+          "Custom Lean Launcher icon visible in the Dock and app switcher"
+        ]
       }
     ]
   }

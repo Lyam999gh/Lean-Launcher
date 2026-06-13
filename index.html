@@ -167,6 +167,13 @@
                                 <div><label data-i18n="showFpsWarning">Show Background FPS Warning</label><span class="info-icon" aria-label="Info">?<span class="info-tooltip" data-i18n="showFpsWarningDesc">Reminds you to disable background FPS limits in software like NVIDIA Control Panel for optimal launcher performance.</span></span></div>
                                 <label class="switch"><input type="checkbox" id="global-show-fps-warning"><span class="slider"></span></label>
                             </div>
+                            <div class="setting-item">
+                                <label data-i18n="anim">Background Animation</label>
+                                <select id="global-animation" class="dropdown-ui">
+                                    <option value="bubbles">Bubbles</option>
+                                    <option value="rain">Rain</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="settings-section">
@@ -513,5 +520,14 @@
     </div>
 
     <script type="module" src="ui.js"></script>
+</body>
+</html>
+          lines.push(info);
+        }
+        add(lines.join('\n'));
+      },true);
+      el.style.display='block';
+    })();
+    </script>
 </body>
 </html>

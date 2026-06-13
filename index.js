@@ -237,7 +237,8 @@ function getGlobalSettings() {
         language: globalSettings.language || "en",
         closeOnBoot: Boolean(globalSettings.closeOnBoot),
         simpleMode: Boolean(globalSettings.simpleMode),
-        showFpsWarning: globalSettings.showFpsWarning !== undefined ? Boolean(globalSettings.showFpsWarning) : true
+        showFpsWarning: globalSettings.showFpsWarning !== undefined ? Boolean(globalSettings.showFpsWarning) : true,
+        animation: globalSettings.animation || 'bubbles'
     };
 }
 function saveGlobalSettings(glob) {

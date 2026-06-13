@@ -1,6 +1,8 @@
 // --- Electron bridge (via contextBridge from preload.js) ---
+window.__moduleLoaded = true;
 const leanAPI = window.leanAPI || null;
 const electronAvailable = Boolean(leanAPI?.invoke);
+window.__electronAvailable = electronAvailable;
 
 // Compatibility wrapper — delegates to the contextBridge-exposed leanAPI.
 // With contextIsolation:true, the renderer cannot access Node/Electron APIs directly.
@@ -50,7 +52,7 @@ const PROFILE_ORDER = ['lightweight', 'balanced', 'full'];
 const userSection = document.getElementById('user-section'), playerHead = document.getElementById('player-head'), usernameEl = document.getElementById('player-name'), leanDesc = document.getElementById('leanDesc');
 const btnHome = document.getElementById('btn-home'), btnAbout = document.getElementById('btn-about'), btnInstances = document.getElementById('btn-instances'), btnSettings = document.getElementById('btn-settings'), homeView = document.getElementById('home-view'), aboutView = document.getElementById('about-view'), instancesView = document.getElementById('instances-view'), createVersionView = document.getElementById('create-version-view'), settingsView = document.getElementById('settings-view');
 
-const globTheme = document.getElementById('global-theme'), globLang = document.getElementById('global-language'), globCloseOnBoot = document.getElementById('global-close-on-boot'), globSimpleMode = document.getElementById('global-simple-mode'), globShowFpsWarning = document.getElementById('global-show-fps-warning');
+const globTheme = document.getElementById('global-theme'), globLang = document.getElementById('global-language'), globCloseOnBoot = document.getElementById('global-close-on-boot'), globSimpleMode = document.getElementById('global-simple-mode'), globShowFpsWarning = document.getElementById('global-show-fps-warning'), globAnimation = document.getElementById('global-animation');
 const setInstanceSelect = document.getElementById('settings-instance-select'), setRam = document.getElementById('set-ram'), setRamSlider = document.getElementById('set-ram-slider'), ramRemainingText = document.getElementById('ram-remaining-text'), setPreset = document.getElementById('set-preset'), setJvm = document.getElementById('set-jvm'), setJavaPath = document.getElementById('set-javapath');
 const toggleAdvancedBtn = document.getElementById('toggle-advanced'), advancedPanel = document.getElementById('advanced-settings-panel'), customArgsContainer = document.getElementById('custom-args-container'), playtimeText = document.getElementById('playtime-text'), playtimeTotalText = document.getElementById('playtime-text-total');
 const cancelLaunchButton = document.getElementById('cancel-launch');
@@ -88,9 +90,12 @@ let editingFileState = null;
 let currentInstanceFilesVersion = null;
 let suppressFileEditorBackdropClick = false;
 let totalSystemRamMb = null;
-// Bubble animation hooks — assigned inside initUI once canvas is ready
+// Animation hooks — assigned inside initUI once canvas is ready
 let startBubbles = () => {};
 let stopBubbles = () => {};
+let startRain = () => {};
+let stopRain = () => {};
+let applyAnimation = () => {};
 
 const i18n = {
     en: {
@@ -192,12 +197,17 @@ async function loadGlobalSettings() {
         if (g.simpleMode) {
             document.documentElement.setAttribute('data-simple', 'true');
             stopBubbles();
+            stopRain();
         } else {
             document.documentElement.removeAttribute('data-simple');
         }
     }
     if (globShowFpsWarning) {
         globShowFpsWarning.checked = g.showFpsWarning !== false;
+    }
+    if (globAnimation) {
+        globAnimation.value = g.animation || 'bubbles';
+        applyAnimation(globAnimation.value);
     }
     document.documentElement.setAttribute('data-theme', globTheme.value);
     applyTranslations();
@@ -210,15 +220,17 @@ function saveGlobalSettings() {
         language: globLang.value,
         closeOnBoot: Boolean(globCloseOnBoot?.checked),
         simpleMode: Boolean(globSimpleMode?.checked),
-        showFpsWarning: Boolean(globShowFpsWarning?.checked)
+        showFpsWarning: Boolean(globShowFpsWarning?.checked),
+        animation: globAnimation ? globAnimation.value : 'bubbles'
     };
     document.documentElement.setAttribute('data-theme', g.theme);
     if (g.simpleMode) {
         document.documentElement.setAttribute('data-simple', 'true');
         stopBubbles();
+        stopRain();
     } else {
         document.documentElement.removeAttribute('data-simple');
-        startBubbles();
+        applyAnimation(g.animation || 'bubbles');
     }
     applyTranslations();
     ipcRenderer.invoke('save-global-settings', g).catch(err => {
@@ -726,8 +738,9 @@ async function refreshAuthAccounts() {
 
 function showLoginModal(show) {
     if (show) {
-        // Close screenshots if visible, with its proper animation
+        // Close other popups that stack above login
         if (screenshotsModal?.classList.contains('visible')) closeScreenshotManager();
+        if (fpsWarningModal?.classList.contains('visible')) hideModalGeneric(fpsWarningModal, 350);
         if (loginHideTimer) {
             clearTimeout(loginHideTimer);
             loginHideTimer = null;
@@ -979,6 +992,7 @@ if (electronAvailable && ipcRenderer) {
 }
 
 async function initUI() {
+    window.__initUICalled = true;
     updateProfileDisplay('Guest');
     setSignedInState(false);
     initAboutAccordion();
@@ -1059,6 +1073,7 @@ async function initUI() {
     globLang.addEventListener('change', saveGlobalSettings);
     globCloseOnBoot?.addEventListener('change', saveGlobalSettings);
     globShowFpsWarning?.addEventListener('change', saveGlobalSettings);
+    globAnimation?.addEventListener('change', () => { saveGlobalSettings(); applyAnimation(globAnimation.value); });
     
     setInstanceSelect.addEventListener('change', loadInstanceSettings);
     setInstanceSelect.addEventListener('change', loadInstanceSettings);
@@ -2082,14 +2097,17 @@ async function initUI() {
     canvas.style.inset = '0';
     canvas.style.pointerEvents = 'none';
     canvas.style.zIndex = '0';
+    canvas.style.filter = 'blur(35px)';
+    canvas.style.transition = 'opacity 0.8s ease';
+    canvas.style.opacity = '1';
     layer.appendChild(canvas);
 
     // Remove old DOM bubble elements if any exist
     layer.querySelectorAll('.bubble').forEach(el => el.remove());
 
-    const ctx = canvas.getContext('2d', { alpha: true });
+    const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
     const bubbles = [];
-    const perfNow = () => performance.now();
+    const perfNow = performance.now.bind(performance);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     let vw = window.innerWidth;
@@ -2104,8 +2122,7 @@ async function initUI() {
     }
     readColors();
 
-    // Pre-rendered sprite cache: render each bubble size ONCE to an offscreen canvas.
-    // Eliminates 840 GPU gradient state mutations per frame (the Windows 20fps bottleneck).
+    // Pre-rendered sprite cache — one offscreen canvas per rounded size bucket
     const spriteCache = new Map();
     function getSprite(r) {
         const key = Math.round(r / 20) * 20;
@@ -2114,10 +2131,8 @@ async function initUI() {
             const d = key * 2;
             sprite = document.createElement('canvas');
             sprite.width = sprite.height = d;
-            const sctx = sprite.getContext('2d');
-            // Solid color circle — blur applied per-sprite to avoid GPU event interception on macOS
+            const sctx = sprite.getContext('2d', { alpha: true });
             sctx.fillStyle = bubbleColor;
-            sctx.filter = 'blur(35px)';
             sctx.beginPath();
             sctx.arc(key, key, key, 0, Math.PI * 2);
             sctx.fill();
@@ -2134,8 +2149,6 @@ async function initUI() {
     function resizeCanvas() {
         vw = window.innerWidth;
         vh = window.innerHeight;
-        // Cap internal canvas resolution: 4K at 2x DPR = 33M pixels/frame,
-        // which overwhelms Windows GPU canvas 2D drivers. Linux handles it fine.
         const MAX_DIM = 2560;
         const scale = Math.min(1, MAX_DIM / Math.max(vw * dpr, vh * dpr));
         canvas.width  = Math.round(vw * dpr * scale);
@@ -2147,7 +2160,7 @@ async function initUI() {
     }
     resizeCanvas();
 
-    // Rebuild gradients when theme changes (--bubble color switches)
+    // Rebuild sprites when theme changes
     const themeObserver = new MutationObserver(() => invalidateSprites());
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
@@ -2169,11 +2182,19 @@ async function initUI() {
             y: prefill ? Math.random() * vh : vh + 100 + Math.random() * 200,
             opacity: prefill ? 0.15 : 0,
             speed: 0.3 + Math.random() * 0.4,
-            attractionTime: 0
+            attractionTime: 0,
+            // Precompute half-size and sprite once
+            halfSize: size / 2,
+            sprite: null
         };
     }
 
-    for (let i = 0; i < MAX_BUBBLES; i++) bubbles.push(createBubble(true));
+    // Pre-seed bubbles and pre-warm sprite cache for each
+    for (let i = 0; i < MAX_BUBBLES; i++) {
+        const b = createBubble(true);
+        b.sprite = getSprite(b.halfSize);
+        bubbles.push(b);
+    }
 
     const CURSOR_PUSH_TIMEOUT = 5000;
     let lastSpawn = 0;
@@ -2183,7 +2204,9 @@ async function initUI() {
         const tNow = perfNow();
 
         if (bubbles.length < MAX_BUBBLES && (tNow - lastSpawn) > SPAWN_INTERVAL_MS) {
-            bubbles.push(createBubble(false));
+            const b = createBubble(false);
+            b.sprite = getSprite(b.halfSize);
+            bubbles.push(b);
             lastSpawn = tNow;
         }
 
@@ -2196,10 +2219,12 @@ async function initUI() {
             const b = bubbles[i];
             b.y -= b.speed;
 
-            const cx = b.x + b.size / 2;
-            const cy = b.y + b.size / 2;
+            const cx = b.x + b.halfSize;
+            const cy = b.y + b.halfSize;
             const dx = localMouse.x - cx;
             const dy = localMouse.y - cy;
+
+            // Manual sq-distance avoids Math.sqrt unless needed
             const dSq = dx * dx + dy * dy;
 
             if (dSq > 0 && dSq < ATTR_RADIUS_SQ) {
@@ -2212,8 +2237,8 @@ async function initUI() {
                     b.x += dx * f;
                     b.y += dy * f;
                     if (d < 3) {
-                        b.x = localMouse.x - b.size / 2;
-                        b.y = localMouse.y - b.size / 2;
+                        b.x = localMouse.x - b.halfSize;
+                        b.y = localMouse.y - b.halfSize;
                     }
                 }
             } else {
@@ -2226,10 +2251,8 @@ async function initUI() {
                 ? Math.max(0, b.opacity - 0.03)
                 : Math.min(1, b.opacity + 0.03);
 
-            // Draw with pre-rendered sprite — single GPU texture blit, zero gradient mutations
-            const r = b.size / 2;
             ctx.globalAlpha = b.opacity;
-            ctx.drawImage(getSprite(r), cx - r, cy - r, b.size, b.size);
+            ctx.drawImage(b.sprite, cx - b.halfSize, cy - b.halfSize, b.size, b.size);
 
             if (b.y + b.size < -300) {
                 bubbles[i] = createBubble(false);
@@ -2239,21 +2262,440 @@ async function initUI() {
         animId = requestAnimationFrame(updateBubblesCanvas);
     }
 
+    // Crossfade configuration
+    const XFADE_MS = 800; // CSS transition duration (must match style.transition)
+    let bubbleFadeTimer = null;
+
     startBubbles = function() {
-        if (animId) return;
+        // Cancel any pending fade-out so opacity doesn't snap back to 0
+        if (bubbleFadeTimer) { clearTimeout(bubbleFadeTimer); bubbleFadeTimer = null; }
+        canvas.style.opacity = '1';
+        if (animId) return; // already running
         animId = requestAnimationFrame(updateBubblesCanvas);
     };
 
     stopBubbles = function() {
-        if (animId) {
-            cancelAnimationFrame(animId);
-            animId = null;
-        }
-        ctx.clearRect(0, 0, vw, vh);
+        canvas.style.opacity = '0';
+        if (bubbleFadeTimer) clearTimeout(bubbleFadeTimer);
+        bubbleFadeTimer = setTimeout(function() {
+            if (animId) {
+                cancelAnimationFrame(animId);
+                animId = null;
+            }
+            ctx.clearRect(0, 0, vw, vh);
+            bubbleFadeTimer = null;
+        }, XFADE_MS);
     };
 
-    // Start if not in simple mode
+    // Start bubbles by default (loadGlobalSettings will crossfade to rain if needed)
     if (!document.documentElement.hasAttribute('data-simple')) startBubbles();
+
+    // --- Rain animation effect (alternative to bubbles) ---
+    //
+    //  Architecture:
+    //    Single canvas at body z-4, pointer-events:none, fixed fullscreen.
+    //    z-4 sits behind #content (z-5) so top-bar pill buttons (z-100 inside
+    //    #content's stacking context) always render above the clouds.
+    //    Draw order (back→front): ambient glow → lightning bolts → rain → clouds.
+    //    Clouds are behind UI chrome but visible through transparent areas.
+    //
+    let rainActive = false;
+    let stormCanvas = null;
+    let stormCtx = null;
+    let stormAnimId = null;
+    let stormFadeTimer = null;
+
+    // -- Rain state (object-pooled, minimal) --
+    const MAX_RAIN_DROPS = 80;
+    const RAIN_WIND = -0.22;
+    const RAIN_MIN_SPEED = 5;
+    const RAIN_MAX_SPEED = 13;
+    const rainDrops = new Array(MAX_RAIN_DROPS);
+    let rainDropsLive = 0;
+
+    // -- Lightning state --
+    let lightningBolt = null;         // single bolt (points array) or null
+    let lightningFlash = 0;           // 1→0 bright flash intensity
+    let lightningAfterglow = 0;       // lingering glow that fades slowly
+    let lightningTimer = 0;
+    let nextLightningFrame = 0;
+    let lightningOriginX = 0;
+    let lightningOriginY = 0;
+
+    // -- Cloud state --
+
+    const CLOUD_FLOOR = 0.26;         // fraction of screen height: bottom of cloud deck
+
+    // ── canvas setup ──────────────────────────────────────────────
+
+    function buildStormCanvas() {
+        if (stormCanvas) return;
+        stormCanvas = document.createElement('canvas');
+        stormCanvas.style.position = 'fixed';
+        stormCanvas.style.inset = '0';
+        stormCanvas.style.pointerEvents = 'none';
+        stormCanvas.style.zIndex = '4';
+        stormCanvas.style.opacity = '0';
+        stormCanvas.style.transition = 'opacity 0.8s ease';
+        document.body.appendChild(stormCanvas);
+        stormCtx = stormCanvas.getContext('2d', { alpha: true, desynchronized: true });
+        resizeStormCanvas();
+    }
+
+    function resizeStormCanvas() {
+        if (!stormCanvas) return;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        stormCanvas.width  = Math.round(window.innerWidth  * dpr);
+        stormCanvas.height = Math.round(window.innerHeight * dpr);
+        stormCanvas.style.width  = window.innerWidth  + 'px';
+        stormCanvas.style.height = window.innerHeight + 'px';
+        stormCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    // ── theme helpers ─────────────────────────────────────────────
+
+    const RAIN_COLORS = {
+        light:    'rgba(139,92,246,',
+        pastel:   'rgba(168,140,220,',
+        dark:     'rgba(168,85,247,',
+        space:    'rgba(100,180,255,',
+        midnight: 'rgba(100,150,220,',
+        grass:    'rgba(100,180,100,',
+        nether:   'rgba(220,80,80,',
+        end:      'rgba(200,180,100,',
+        bees:     'rgba(220,180,40,',
+        deepdark: 'rgba(80,160,180,',
+        cherry:   'rgba(240,150,180,',
+        default:  'rgba(139,92,246,'
+    };
+
+    function getRainColor() {
+        const theme = document.documentElement.getAttribute('data-theme') || 'light';
+        return (RAIN_COLORS[theme] || RAIN_COLORS.default);
+    }
+
+    // Cached storm RGB + precomputed color partials (avoid per-frame string concat)
+    let _sr = 139, _sg = 92, _sb = 246;
+    let _sc0 = '139,92,246,';  // "r,g,b," for opacity suffix
+    function refreshStormColors() {
+        const m = getRainColor().match(/rgba\((\d+),(\d+),(\d+),/);
+        _sr = m ? +m[1] : 139; _sg = m ? +m[2] : 92; _sb = m ? +m[3] : 246;
+        _sc0 = `${_sr},${_sg},${_sb},`;
+    }
+    refreshStormColors();
+    const stormThemeObs = new MutationObserver(refreshStormColors);
+    stormThemeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    // ── cloud layer (3 wide blur clouds, right→left drift) ───────
+
+    let cloudTubes = [];              // each "tube" is one wide ellipse
+    const CLOUD_COUNT = 3;
+    const CLOUD_BLUR = 60;           // heavy blur = fewer clouds needed
+
+    function seedClouds() {
+        cloudTubes = [];
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const floor = h * CLOUD_FLOOR;
+        for (let i = 0; i < CLOUD_COUNT; i++) {
+            // Each cloud is a single very wide, slightly tall ellipse
+            // Denser at the bottom of the cloud zone, lighter at top
+            const baseY = floor * (0.25 + i * 0.28 + Math.random() * 0.1);
+            cloudTubes.push({
+                cx: (i / CLOUD_COUNT + Math.random() * 0.3) * w * 1.3 - w * 0.15,
+                cy: baseY,
+                rx: w * (0.6 + Math.random() * 0.4),   // 60-100% of screen width
+                ry: 50 + Math.random() * 70,
+                speed: -(0.15 + Math.random() * 0.5),   // right→left, slow
+                alpha: 0.28 + ((i / CLOUD_COUNT) * 0.22)  // lower = more opaque
+            });
+        }
+    }
+
+    function drawClouds() {
+        if (!stormCtx) return;
+        const w = window.innerWidth;
+        const r = _sr, g = _sg, b = _sb;
+
+        // Drift right→left, wrap
+        for (const c of cloudTubes) {
+            c.cx += c.speed * 0.04;
+            // Wrap: if center exits left, re-enter fully from right
+            if (c.cx + c.rx < -100) c.cx = w + c.rx + 100;
+        }
+
+        stormCtx.save();
+        stormCtx.filter = `blur(${CLOUD_BLUR}px)`;
+
+        // Lower clouds paint last (on top)
+        cloudTubes.sort((a, b) => a.cy - b.cy);
+
+        for (const c of cloudTubes) {
+            const grad = stormCtx.createRadialGradient(c.cx, c.cy - c.ry * 0.15, 0, c.cx, c.cy, c.rx);
+            grad.addColorStop(0,    `rgba(${r},${g},${b},${c.alpha.toFixed(3)})`);
+            grad.addColorStop(0.5,  `rgba(${r},${g},${b},${(c.alpha * 0.5).toFixed(3)})`);
+            grad.addColorStop(1,    `rgba(${r},${g},${b},0)`);
+            stormCtx.fillStyle = grad;
+            stormCtx.beginPath();
+            stormCtx.ellipse(c.cx, c.cy, c.rx, c.ry, 0, 0, Math.PI * 2);
+            stormCtx.fill();
+        }
+
+        stormCtx.restore();
+
+        // Solid ceiling band — fully opaque at very top
+        stormCtx.save();
+        stormCtx.filter = `blur(${(CLOUD_BLUR * 0.4).toFixed(0)}px)`;
+        const ch = window.innerHeight * CLOUD_FLOOR * 0.3;
+        const cg = stormCtx.createLinearGradient(0, 0, 0, ch);
+        cg.addColorStop(0,    `rgba(${r},${g},${b},0.95)`);
+        cg.addColorStop(0.6,  `rgba(${r},${g},${b},0.4)`);
+        cg.addColorStop(1,    `rgba(${r},${g},${b},0)`);
+        stormCtx.fillStyle = cg;
+        stormCtx.fillRect(0, 0, w, ch);
+        stormCtx.restore();
+    }
+
+    // ── lightning (themed, midpoint-displacement fractal) ─────────
+
+    function midpointDisplace(p1, p2, spread) {
+        return {
+            x: (p1.x + p2.x) / 2 + (Math.random() - 0.5) * spread,
+            y: (p1.y + p2.y) / 2 + (Math.random() - 0.5) * spread * 0.6
+        };
+    }
+
+    function subdivide(pts, spread, depth) {
+        if (depth <= 0 || pts.length < 2) return pts;
+        const r = [];
+        for (let i = 0; i < pts.length - 1; i++) {
+            r.push(pts[i], midpointDisplace(pts[i], pts[i + 1], spread));
+        }
+        r.push(pts[pts.length - 1]);
+        return subdivide(r, spread * 0.55, depth - 1);
+    }
+
+    function generateBoltPoints(startX, startY) {
+        const h = window.innerHeight;
+        const endY = startY + (h - startY) * (0.4 + Math.random() * 0.45);
+        const endX = startX + (Math.random() - 0.5) * 220;
+        let pts = subdivide([{ x: startX, y: startY }, { x: endX, y: endY }], 90, 5);
+        const branches = [];
+        const branchCount = 1 + Math.floor(Math.random() * 3);
+        for (let b = 0; b < branchCount; b++) {
+            const fi = 2 + Math.floor(Math.random() * (pts.length - 4));
+            if (fi >= pts.length) continue;
+            const f = pts[fi];
+            const beY = f.y + (endY - f.y) * (0.25 + Math.random() * 0.5);
+            const beX = f.x + (Math.random() - 0.5) * 160;
+            branches.push(subdivide([{ x: f.x, y: f.y }, { x: beX, y: beY }], 45, 3));
+        }
+        return { main: pts, branches };
+    }
+
+    function triggerLightning() {
+        const floor = window.innerHeight * CLOUD_FLOOR;
+        lightningOriginY = floor * (0.12 + Math.random() * 0.58);
+        lightningOriginX = window.innerWidth * (0.1 + Math.random() * 0.8);
+        lightningBolt = generateBoltPoints(lightningOriginX, lightningOriginY);
+        lightningFlash = 1.0;
+        lightningAfterglow = 0.7;
+        lightningTimer = 0;
+        nextLightningFrame = Math.floor((120 + Math.random() * 420) / 16.67);
+    }
+
+    function drawLightning() {
+        if (!stormCtx || !lightningBolt) return;
+        const bolts = [lightningBolt.main, ...lightningBolt.branches];
+        stormCtx.lineCap = 'round';
+        stormCtx.lineJoin = 'round';
+        stormCtx.shadowColor = `rgba(${_sc0}0.85)`;
+
+        for (let i = 0; i < bolts.length; i++) {
+            const pts = bolts[i];
+            if (!pts || pts.length < 2) continue;
+            const isMain = (i === 0);
+            const alpha = isMain
+                ? Math.min(1, lightningFlash * 1.1 + lightningAfterglow * 0.65)
+                : Math.min(1, lightningFlash * 0.6  + lightningAfterglow * 0.35);
+            if (alpha <= 0.005) continue;
+            const w = isMain ? 2.2 : 1.0;
+
+            // Outer glow — themed
+            stormCtx.shadowBlur = isMain ? 22 : 12;
+            stormCtx.strokeStyle = `rgba(${_sc0}${(alpha * 0.55).toFixed(3)})`;
+            stormCtx.lineWidth = w * 5;
+            stormCtx.beginPath();
+            stormCtx.moveTo(pts[0].x, pts[0].y);
+            for (let j = 1; j < pts.length; j++) stormCtx.lineTo(pts[j].x, pts[j].y);
+            stormCtx.stroke();
+
+            // Core bolt — bright tint
+            const rc = Math.min(255, _sr + 80), gc = Math.min(255, _sg + 80), bc = Math.min(255, _sb + 80);
+            stormCtx.shadowBlur = isMain ? 10 : 5;
+            stormCtx.strokeStyle = `rgba(${rc},${gc},${bc},${(alpha * 0.95).toFixed(3)})`;
+            stormCtx.lineWidth = w;
+            stormCtx.beginPath();
+            stormCtx.moveTo(pts[0].x, pts[0].y);
+            for (let j = 1; j < pts.length; j++) stormCtx.lineTo(pts[j].x, pts[j].y);
+            stormCtx.stroke();
+        }
+
+        stormCtx.shadowBlur = 0;
+        stormCtx.shadowColor = 'transparent';
+
+        // Origin flare
+        if (lightningFlash > 0.15) {
+            const rf = Math.min(255, _sr + 100), gf = Math.min(255, _sg + 100), bf = Math.min(255, _sb + 100);
+            const fg = stormCtx.createRadialGradient(lightningOriginX, lightningOriginY, 0, lightningOriginX, lightningOriginY, 55);
+            fg.addColorStop(0,    `rgba(${rf},${gf},${bf},${(lightningFlash * 0.75).toFixed(3)})`);
+            fg.addColorStop(0.3,  `rgba(${_sc0}${(lightningFlash * 0.4).toFixed(3)})`);
+            fg.addColorStop(1,    `rgba(${_sc0}0)`);
+            stormCtx.fillStyle = fg;
+            stormCtx.beginPath();
+            stormCtx.arc(lightningOriginX, lightningOriginY, 55, 0, Math.PI * 2);
+            stormCtx.fill();
+        }
+    }
+
+    function drawAmbientGlow() {
+        if (!stormCtx) return;
+        const w = window.innerWidth, h = window.innerHeight;
+        const floor = h * CLOUD_FLOOR;
+        const glow = lightningFlash * 0.18 + lightningAfterglow * 0.06;
+        if (glow > 0.003) {
+            const y0 = floor * 0.95;
+            const g = stormCtx.createLinearGradient(0, y0, 0, h);
+            g.addColorStop(0,    `rgba(${_sc0}0)`);
+            g.addColorStop(0.08, `rgba(${_sc0}${glow.toFixed(4)})`);
+            g.addColorStop(1,    `rgba(${_sc0}${(glow * 0.5).toFixed(4)})`);
+            stormCtx.fillStyle = g;
+            stormCtx.fillRect(0, y0, w, h - y0);
+        }
+    }
+
+    // ── rain drops (object-pooled, zero per-frame allocation) ─────
+
+    // Re-init an existing drop object in-place — no allocation
+    function initDrop(drop, startY) {
+        const w = window.innerWidth;
+        const speed = RAIN_MIN_SPEED + Math.random() * (RAIN_MAX_SPEED - RAIN_MIN_SPEED);
+        const length = 10 + Math.random() * 24;
+        drop.x     = Math.random() * w;
+        drop.y     = startY != null ? startY : (window.innerHeight * CLOUD_FLOOR + Math.random() * 60);
+        drop.speed = speed;
+        drop.dx    = RAIN_WIND * speed * 0.6;
+        drop.length = length;
+        drop.lenX  = RAIN_WIND * length * 0.7;
+        drop.width = 0.4 + Math.random() * 1.2;
+        drop.alpha = 0.16 + Math.random() * 0.44;
+        return drop;
+    }
+
+    function drawRain() {
+        if (!stormCtx) return;
+        const w = window.innerWidth, h = window.innerHeight;
+        const floor = h * CLOUD_FLOOR;
+
+        stormCtx.lineCap = 'round';
+        for (let i = rainDropsLive - 1; i >= 0; i--) {
+            const d = rainDrops[i];
+            d.y += d.speed;
+            d.x += d.dx;
+            const fadeIn = Math.min(1, Math.max(0, d.y - floor) / 60);
+            const alpha = d.alpha * fadeIn;
+            if (alpha > 0.005) {
+                stormCtx.strokeStyle = `rgba(${_sr},${_sg},${_sb},${alpha.toFixed(4)})`;
+                stormCtx.lineWidth = d.width;
+                stormCtx.beginPath();
+                stormCtx.moveTo(d.x, d.y);
+                stormCtx.lineTo(d.x + d.lenX, d.y + d.length);
+                stormCtx.stroke();
+            }
+            if (d.y > h + 20) initDrop(d);  // recycle in-place
+        }
+        while (rainDropsLive < MAX_RAIN_DROPS) {
+            rainDrops[rainDropsLive++] = initDrop({}, floor + Math.random() * (h - floor));
+        }
+    }
+
+    // ── main animation loop ───────────────────────────────────────
+
+    function updateStormCanvas() {
+        if (!stormCtx || !rainActive) return;
+        const w = window.innerWidth, h = window.innerHeight;
+        stormCtx.clearRect(0, 0, w, h);
+        drawAmbientGlow();
+        // Lightning
+        lightningTimer++;
+        if (!lightningBolt && lightningTimer >= nextLightningFrame) triggerLightning();
+        if (lightningBolt) {
+            drawLightning();
+            lightningFlash = Math.max(0, lightningFlash - 0.06);
+            lightningAfterglow = Math.max(0, lightningAfterglow - 0.004);
+            if (lightningFlash <= 0.01 && lightningAfterglow <= 0.01) { lightningBolt = null; lightningTimer = 0; }
+        }
+        drawRain();
+        drawClouds();
+        stormAnimId = requestAnimationFrame(updateStormCanvas);
+    }
+
+    // ── public API ────────────────────────────────────────────────
+
+    startRain = function () {
+        if (stormFadeTimer) { clearTimeout(stormFadeTimer); stormFadeTimer = null; }
+        if (!rainActive) {
+            rainActive = true;
+            buildStormCanvas();
+            resizeStormCanvas();
+            seedClouds();
+            refreshStormColors();
+            rainDropsLive = 0;
+            lightningBolt = null;
+            lightningFlash = lightningAfterglow = lightningTimer = 0;
+            nextLightningFrame = 60;
+            const hh = window.innerHeight, floor = hh * CLOUD_FLOOR, range = hh - floor;
+            for (let i = 0; i < MAX_RAIN_DROPS; i++) {
+                rainDrops[i] = initDrop({}, floor + range * (i / MAX_RAIN_DROPS));
+            }
+            rainDropsLive = MAX_RAIN_DROPS;
+            stormAnimId = requestAnimationFrame(updateStormCanvas);
+        }
+        if (stormCanvas) stormCanvas.style.opacity = '1';
+    };
+
+    stopRain = function () {
+        if (stormCanvas) stormCanvas.style.opacity = '0';
+        if (stormFadeTimer) clearTimeout(stormFadeTimer);
+        stormFadeTimer = setTimeout(function () {
+            rainActive = false;
+            lightningBolt = null;
+            lightningFlash = lightningAfterglow = 0;
+            if (stormAnimId) { cancelAnimationFrame(stormAnimId); stormAnimId = null; }
+            if (stormCtx) stormCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+            rainDropsLive = 0;
+            cloudTubes = [];
+            stormFadeTimer = null;
+        }, XFADE_MS);
+    };
+
+    applyAnimation = function (type) {
+        if (type === 'rain') {
+            if (!document.documentElement.hasAttribute('data-simple')) startRain();
+            stopBubbles();
+        } else {
+            if (!document.documentElement.hasAttribute('data-simple')) startBubbles();
+            stopRain();
+        }
+    };
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+        if (rainActive) {
+            resizeStormCanvas();
+            seedClouds();
+        }
+    }, { passive: true });
 
     // --- Auto-update event listeners ---
     if (typeof window.updateAPI !== 'undefined') {
@@ -2582,7 +3024,13 @@ async function loadScreenshots(version) {
     });
 }
 
-document.addEventListener('DOMContentLoaded', initUI);
+// Detect DOM readiness — with <script type="module"> (deferred), DOMContentLoaded
+// may have already fired before this file finishes loading. Use readyState check.
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initUI);
+} else {
+    initUI(); // DOM already loaded, call immediately
+}
 
 function setupCustomSelects() {
     document.querySelectorAll('select').forEach(select => {
@@ -2722,6 +3170,7 @@ document.addEventListener('mousedown', (e) => {
     if (e.target.closest('#btn-screenshots')) return;
 
     // Close any visible modal (skip confirm-delete: it has Promise logic)
+    const updateModal = document.getElementById('update-modal');
     if (loginModal?.classList.contains('visible')) hideModalGeneric(loginModal);
     if (fpsWarningModal?.classList.contains('visible')) hideModalGeneric(fpsWarningModal, 350);
     if (screenshotsModal?.classList.contains('visible')) closeScreenshotManager();
@@ -2730,4 +3179,10 @@ document.addEventListener('mousedown', (e) => {
     if (updateModal?.classList.contains('visible')) hideModalGeneric(updateModal, 300);
     if (screenshotLightbox?.classList.contains('visible')) closeLightbox();
 });
-document.addEventListener('DOMContentLoaded', setupCustomSelects);
+
+// setupCustomSelects — also needs the readyState guard
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupCustomSelects);
+} else {
+    setupCustomSelects();
+}

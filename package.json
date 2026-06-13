@@ -1,6 +1,7 @@
 {
   "name": "lean-launcher",
   "version": "1.0.0",
+  "productName": "Lean Launcher",
   "description": "Lean Launcher - Custom Minecraft Launcher",
   "main": "main.js",
   "scripts": {
