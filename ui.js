@@ -1,8 +1,6 @@
 // --- Electron bridge (via contextBridge from preload.js) ---
-window.__moduleLoaded = true;
 const leanAPI = window.leanAPI || null;
 const electronAvailable = Boolean(leanAPI?.invoke);
-window.__electronAvailable = electronAvailable;
 
 // Compatibility wrapper — delegates to the contextBridge-exposed leanAPI.
 // With contextIsolation:true, the renderer cannot access Node/Electron APIs directly.
@@ -992,7 +990,6 @@ if (electronAvailable && ipcRenderer) {
 }
 
 async function initUI() {
-    window.__initUICalled = true;
     updateProfileDisplay('Guest');
     setSignedInState(false);
     initAboutAccordion();
