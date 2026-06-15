@@ -5,10 +5,10 @@ const electronAvailable = Boolean(leanAPI?.invoke);
 // Compatibility wrapper — delegates to the contextBridge-exposed leanAPI.
 // With contextIsolation:true, the renderer cannot access Node/Electron APIs directly.
 const ipcRenderer = electronAvailable ? {
-  invoke: (...args) => leanAPI.invoke(...args),
-  on: (channel, callback) => { leanAPI.on(channel, callback); },
-  send: (...args) => leanAPI.send(...args),
-  removeAllListeners: (channel) => { leanAPI.removeAllListeners(channel); }
+  invoke: (channel, ...args) => leanAPI.invoke(channel, ...args),
+  on: (channel, callback) => leanAPI.on(channel, callback),
+  send: (channel, ...args) => leanAPI.send(channel, ...args),
+  removeAllListeners: (channel) => leanAPI.removeAllListeners(channel)
 } : null;
 
 // --- Imports ---
@@ -228,8 +228,10 @@ function saveGlobalSettings() {
         stopRain();
     } else {
         document.documentElement.removeAttribute('data-simple');
-        applyAnimation(g.animation || 'bubbles');
     }
+    // NOTE: Do NOT call applyAnimation here — that would restart the background
+    // on every unrelated setting change (e.g. toggling closeOnBoot would switch
+    // back to rain). The animation dropdown has its own dedicated change handler.
     applyTranslations();
     ipcRenderer.invoke('save-global-settings', g).catch(err => {
         console.error('[Settings] Failed to save global settings:', err);
@@ -738,7 +740,11 @@ function showLoginModal(show) {
     if (show) {
         // Close other popups that stack above login
         if (screenshotsModal?.classList.contains('visible')) closeScreenshotManager();
-        if (fpsWarningModal?.classList.contains('visible')) hideModalGeneric(fpsWarningModal, 350);
+        // Always force-hide the FPS warning (clear any in-progress transition)
+        if (fpsWarningModal && !fpsWarningModal.classList.contains('hidden')) {
+            fpsWarningModal.classList.remove('visible');
+            fpsWarningModal.classList.add('hidden');
+        }
         if (loginHideTimer) {
             clearTimeout(loginHideTimer);
             loginHideTimer = null;
@@ -778,7 +784,7 @@ function setStatus(message, progress = 0) {
 const CHANGELOG_FALLBACK = [
   {
     version: '1.0.0',
-    date: 'May 31, 2026',
+    date: 'June 15th, 2026',
     title: 'This is the first release of Lean Launcher.',
     description: '',
     features: [
@@ -986,6 +992,15 @@ if (electronAvailable && ipcRenderer) {
     ipcRenderer.on('launch-crash-report', (event, report) => {
         setStatus(report?.message || 'Minecraft crashed.', 0);
         showCrashReportModal(report || {});
+    });
+
+    ipcRenderer.on('launch-failed', (event, data) => {
+        setStatus(data?.message || 'Launch failed.', 0);
+        // Reset UI state — hide loading bar after a brief delay so user sees the error
+        setTimeout(() => {
+            if (statusBar) statusBar.classList.remove('visible');
+            if (statusProgress) statusProgress.style.width = '0%';
+        }, 4000);
     });
 }
 
@@ -2082,6 +2097,7 @@ async function initUI() {
     }
 
     // Bubble animation — Canvas-based: zero DOM manipulation, single GPU texture
+    // Continuous pool: every bubble that exits the top is instantly recycled to the bottom
     const MAX_BUBBLES = 12;
     const SPAWN_INTERVAL_MS = 380;
     const SAFE = 80;
@@ -2180,7 +2196,6 @@ async function initUI() {
             opacity: prefill ? 0.15 : 0,
             speed: 0.3 + Math.random() * 0.4,
             attractionTime: 0,
-            // Precompute half-size and sprite once
             halfSize: size / 2,
             sprite: null
         };
@@ -2253,6 +2268,7 @@ async function initUI() {
 
             if (b.y + b.size < -300) {
                 bubbles[i] = createBubble(false);
+                bubbles[i].sprite = getSprite(bubbles[i].halfSize);
             }
         }
 
@@ -2303,10 +2319,10 @@ async function initUI() {
     let stormFadeTimer = null;
 
     // -- Rain state (object-pooled, minimal) --
-    const MAX_RAIN_DROPS = 80;
+    const MAX_RAIN_DROPS = 40;
     const RAIN_WIND = -0.22;
     const RAIN_MIN_SPEED = 5;
-    const RAIN_MAX_SPEED = 13;
+    const RAIN_MAX_SPEED = 11;
     const rainDrops = new Array(MAX_RAIN_DROPS);
     let rainDropsLive = 0;
 
@@ -2386,8 +2402,8 @@ async function initUI() {
     // ── cloud layer (3 wide blur clouds, right→left drift) ───────
 
     let cloudTubes = [];              // each "tube" is one wide ellipse
-    const CLOUD_COUNT = 3;
-    const CLOUD_BLUR = 60;           // heavy blur = fewer clouds needed
+    const CLOUD_COUNT = 2;
+    const CLOUD_BLUR = 40;           // moderate blur for performance
 
     function seedClouds() {
         cloudTubes = [];
@@ -2478,7 +2494,7 @@ async function initUI() {
         const endX = startX + (Math.random() - 0.5) * 220;
         let pts = subdivide([{ x: startX, y: startY }, { x: endX, y: endY }], 90, 5);
         const branches = [];
-        const branchCount = 1 + Math.floor(Math.random() * 3);
+        const branchCount = 1 + (Math.random() < 0.4 ? 1 : 0);
         for (let b = 0; b < branchCount; b++) {
             const fi = 2 + Math.floor(Math.random() * (pts.length - 4));
             if (fi >= pts.length) continue;
@@ -2496,9 +2512,9 @@ async function initUI() {
         lightningOriginX = window.innerWidth * (0.1 + Math.random() * 0.8);
         lightningBolt = generateBoltPoints(lightningOriginX, lightningOriginY);
         lightningFlash = 1.0;
-        lightningAfterglow = 0.7;
+        lightningAfterglow = 0.5;
         lightningTimer = 0;
-        nextLightningFrame = Math.floor((120 + Math.random() * 420) / 16.67);
+        nextLightningFrame = Math.floor((200 + Math.random() * 600) / 16.67);
     }
 
     function drawLightning() {
@@ -2519,9 +2535,9 @@ async function initUI() {
             const w = isMain ? 2.2 : 1.0;
 
             // Outer glow — themed
-            stormCtx.shadowBlur = isMain ? 22 : 12;
-            stormCtx.strokeStyle = `rgba(${_sc0}${(alpha * 0.55).toFixed(3)})`;
-            stormCtx.lineWidth = w * 5;
+            stormCtx.shadowBlur = isMain ? 12 : 6;
+            stormCtx.strokeStyle = `rgba(${_sc0}${(alpha * 0.4).toFixed(3)})`;
+            stormCtx.lineWidth = w * 4;
             stormCtx.beginPath();
             stormCtx.moveTo(pts[0].x, pts[0].y);
             for (let j = 1; j < pts.length; j++) stormCtx.lineTo(pts[j].x, pts[j].y);
@@ -2529,7 +2545,7 @@ async function initUI() {
 
             // Core bolt — bright tint
             const rc = Math.min(255, _sr + 80), gc = Math.min(255, _sg + 80), bc = Math.min(255, _sb + 80);
-            stormCtx.shadowBlur = isMain ? 10 : 5;
+            stormCtx.shadowBlur = isMain ? 6 : 3;
             stormCtx.strokeStyle = `rgba(${rc},${gc},${bc},${(alpha * 0.95).toFixed(3)})`;
             stormCtx.lineWidth = w;
             stormCtx.beginPath();
@@ -2589,9 +2605,18 @@ async function initUI() {
         return drop;
     }
 
+    function recycleDrop(drop) {
+        const w = window.innerWidth;
+        const speed = RAIN_MIN_SPEED + Math.random() * (RAIN_MAX_SPEED - RAIN_MIN_SPEED);
+        drop.x = Math.random() * w;
+        drop.y = window.innerHeight * CLOUD_FLOOR + Math.random() * 40;
+        drop.speed = speed;
+        drop.dx = RAIN_WIND * speed * 0.6;
+    }
+
     function drawRain() {
         if (!stormCtx) return;
-        const w = window.innerWidth, h = window.innerHeight;
+        const h = window.innerHeight;
         const floor = h * CLOUD_FLOOR;
 
         stormCtx.lineCap = 'round';
@@ -2599,7 +2624,7 @@ async function initUI() {
             const d = rainDrops[i];
             d.y += d.speed;
             d.x += d.dx;
-            const fadeIn = Math.min(1, Math.max(0, d.y - floor) / 60);
+            const fadeIn = d.y - floor < 60 ? (d.y - floor) / 60 : 1;
             const alpha = d.alpha * fadeIn;
             if (alpha > 0.005) {
                 stormCtx.strokeStyle = `rgba(${_sr},${_sg},${_sb},${alpha.toFixed(4)})`;
@@ -2609,10 +2634,7 @@ async function initUI() {
                 stormCtx.lineTo(d.x + d.lenX, d.y + d.length);
                 stormCtx.stroke();
             }
-            if (d.y > h + 20) initDrop(d);  // recycle in-place
-        }
-        while (rainDropsLive < MAX_RAIN_DROPS) {
-            rainDrops[rainDropsLive++] = initDrop({}, floor + Math.random() * (h - floor));
+            if (d.y > h + 20) recycleDrop(d);
         }
     }
 
@@ -2629,7 +2651,7 @@ async function initUI() {
         if (lightningBolt) {
             drawLightning();
             lightningFlash = Math.max(0, lightningFlash - 0.06);
-            lightningAfterglow = Math.max(0, lightningAfterglow - 0.004);
+            lightningAfterglow = Math.max(0, lightningAfterglow - 0.005);
             if (lightningFlash <= 0.01 && lightningAfterglow <= 0.01) { lightningBolt = null; lightningTimer = 0; }
         }
         drawRain();
@@ -2838,7 +2860,10 @@ async function openScreenshotManager(requestedVersion) {
     
     // Close any other visible popups with their proper animations first
     if (loginModal?.classList.contains('visible')) hideModalGeneric(loginModal);
-    if (fpsWarningModal?.classList.contains('visible')) hideModalGeneric(fpsWarningModal, 350);
+    if (fpsWarningModal && !fpsWarningModal.classList.contains('hidden')) {
+        fpsWarningModal.classList.remove('visible');
+        fpsWarningModal.classList.add('hidden');
+    }
     
     const version = requestedVersion || versionSelect?.value || '1.21.4';
     

@@ -46,9 +46,11 @@
       "style.css",
       "package.json",
       "changelog.json",
+      "settings.json",
       "icon.png",
       "lib/**/*",
-      "mod-profiles/**/*"
+      "mod-profiles/**/*",
+      "installers/**/*"
     ],
     "extraResources": [
       {

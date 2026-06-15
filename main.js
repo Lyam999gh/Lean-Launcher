@@ -27,7 +27,8 @@ const { loginAccount, getAuthAccounts, setActiveAuthAccount, removeAuthAccount }
 // --- GPU acceleration (safe flags — no stutter, no frame pacing issues) ---
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
+// enable-zero-copy removed: causes bubble/canvas clipping and backdrop-filter
+// rendering artifacts on macOS and some Windows configurations.
 
 let mainWindow = null;
 
@@ -143,28 +144,61 @@ ipcMain.handle('launch-game', async (event, payload) => {
 
   try { 
     const result = await startLeanClient(payload, (msg, prog) => {
+          if (!senderWindow || senderWindow.isDestroyed()) return;
           event.sender.send('launch-update', { msg, prog });
       }, (launchEvent) => {
           if (!launchEvent || typeof launchEvent !== 'object') return;
 
-          if (launchEvent.type === 'booted' && closeOnBoot && senderWindow && !senderWindow.isDestroyed()) {
-            senderWindow.hide();
+          if (launchEvent.type === 'booted') {
+            if (closeOnBoot && senderWindow && !senderWindow.isDestroyed()) {
+              senderWindow.hide();
+            }
+            return;
+          }
+
+          if (launchEvent.type === 'launch-failed') {
+            // MCLC-level failure (Java not found, timeout, etc.) — tell the UI immediately
+            const visibleWindow = showOrCreateMainWindow();
+            if (visibleWindow && !visibleWindow.isDestroyed()) {
+              visibleWindow.webContents.send('launch-failed', {
+                reason: launchEvent.reason || 'unknown',
+                message: launchEvent.message || 'Minecraft failed to launch.'
+              });
+            }
             return;
           }
 
           if (launchEvent.type === 'game-exit') {
             if (closeOnBoot) showOrCreateMainWindow();
+            // Notify the UI that the game exited
+            if (senderWindow && !senderWindow.isDestroyed()) {
+              event.sender.send('launch-failed', {
+                reason: launchEvent.crashed ? 'crash' : 'exit',
+                message: launchEvent.crashed
+                  ? `Minecraft exited unexpectedly (code ${launchEvent.code || 'unknown'}).`
+                  : 'Minecraft exited.'
+              });
+            }
             return;
           }
 
           if (launchEvent.type === 'crash') {
             const visibleWindow = showOrCreateMainWindow();
-            visibleWindow.webContents.send('launch-crash-report', launchEvent.report || {});
+            if (visibleWindow && !visibleWindow.isDestroyed()) {
+              visibleWindow.webContents.send('launch-crash-report', launchEvent.report || {});
+            }
           }
       });
       return { success: true, result }; 
   }
-  catch (error) { return { success: false, error: error?.message || String(error) }; }
+  catch (error) {
+    // Launch threw synchronously (e.g., Java validation failed)
+    const msg = error?.message || String(error);
+    if (senderWindow && !senderWindow.isDestroyed()) {
+      event.sender.send('launch-failed', { reason: 'error', message: msg });
+    }
+    return { success: false, error: msg };
+  }
 });
 
 ipcMain.handle('cancel-launch', () => {

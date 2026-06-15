@@ -1,9 +1,26 @@
+/* --- GLOBAL RESET & BASE --- */
+
+*, *::before, *::after {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* Allow text selection inside text inputs and textareas */
+input, textarea, [contenteditable] {
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+}
+
 /* --- THEME ENGINE --- */
 
 /* Smooth theme transitions on all color-aware elements */
 body, .top-bar, .nav-links, .user-section, .window-controls,
 .main-content, .launcher-modal, .screenshots-card,
-.login-btn, .nav-btn, .nav-indicator, .win-btn,
+.login-btn, .nav-btn, .nav-indicator, .win-btn, .kofi-btn,
 input, select, textarea, button, .custom-select__button, .custom-select__list,
 .launch-group, .version-container, .hero, .hero h1, .hero p,
 .settings-panel, .instance-card, .about-card, .about-section,
@@ -264,7 +281,6 @@ body {
     box-shadow: var(--panel-shadow);
     border-radius: 999px;
     transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1), background 0.4s ease, border-color 0.4s ease;
-    overflow: hidden;
     will-change: transform;
     z-index: 100;
 }
@@ -348,6 +364,67 @@ body {
 .close-btn:hover {
     background: rgba(255, 82, 82, 0.95);
     color: white;
+}
+
+/* Ko-fi button — glassmorphism pill below window controls */
+.kofi-btn {
+    position: fixed;
+    top: calc(20px + 60px + 8px);
+    right: calc(30px + clamp(6px, 1vw, 12px));
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    background: var(--panel-bg);
+    color: var(--text);
+    backdrop-filter: blur(20px) saturate(130%) brightness(1);
+    -webkit-backdrop-filter: blur(20px) saturate(130%) brightness(1);
+    box-shadow: var(--panel-shadow);
+    font-family: "Inter", sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s ease, background 0.4s ease, border-color 0.4s ease;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 100;
+    pointer-events: auto;
+    -webkit-app-region: no-drag;
+}
+
+.kofi-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+}
+
+.kofi-label {
+    white-space: nowrap;
+}
+
+.kofi-btn:hover {
+    background: #ff5e5b;
+    color: white;
+    border-color: #ff5e5b;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(255,94,91,0.35);
+}
+
+.kofi-btn:hover svg {
+    transform: scale(1.1);
+}
+
+[data-theme="dark"] .kofi-btn:hover,
+[data-theme="midnight"] .kofi-btn:hover,
+[data-theme="space"] .kofi-btn:hover,
+[data-theme="deepdark"] .kofi-btn:hover {
+    background: #ff5e5b;
+    color: white;
+    border-color: #ff5e5b;
 }
 
 .user-section {
@@ -3144,7 +3221,8 @@ input:checked+.slider:before {
 [data-simple="true"] .nav-links,
 [data-simple="true"] .window-controls,
 [data-simple="true"] .glass-panel,
-[data-simple="true"] .win-btn {
+[data-simple="true"] .win-btn,
+[data-simple="true"] .kofi-btn {
     box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important;
 }
 
@@ -3168,7 +3246,7 @@ input:checked+.slider:before {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 15;
+    z-index: 20;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.26s ease;
@@ -3242,11 +3320,6 @@ input:checked+.slider:before {
     z-index: 2;
 }
 
-.fps-warning-card > * {
-    position: relative;
-    z-index: 2;
-}
-
 .fps-warning-icon {
     width: clamp(52px, 7vw, 64px);
     height: clamp(52px, 7vw, 64px);
@@ -3305,9 +3378,18 @@ input:checked+.slider:before {
     margin-bottom: 0;
     flex-shrink: 0;
     position: relative;
-    z-index: 5;
+    z-index: 10;
     pointer-events: auto;
     cursor: pointer;
+}
+
+/* Ensure the fps-warning card and its contents are truly inert when the modal is hidden.
+   pointer-events: none on the parent (.fps-warning-card) prevents captures, but child
+   elements with explicit pointer-events: auto (like the Continue button) would override
+   that — so we scope pointer-events:auto to only when the modal is actually visible. */
+.fps-warning-modal:not(.visible) .fps-warning-card,
+.fps-warning-modal:not(.visible) .fps-warning-card * {
+    pointer-events: none !important;
 }
 
 /* --- Left Toolbar (floating pill buttons under user section) --- */
@@ -3341,7 +3423,6 @@ input:checked+.slider:before {
     cursor: pointer;
     transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
     position: relative;
-    overflow: hidden;
 }
 
 .left-toolbar-btn:hover {
