@@ -1625,6 +1625,55 @@ select {
     margin-bottom: 6px;
 }
 
+/* --- About Page: Release Hero --- */
+.release-hero {
+    text-align: center;
+    padding: 28px 20px;
+    background: linear-gradient(135deg, rgba(88, 101, 242, 0.08) 0%, rgba(0, 168, 82, 0.05) 100%);
+    border-radius: 16px;
+    margin-bottom: 20px;
+}
+
+.release-hero h3 {
+    font-size: 26px;
+    font-weight: 800;
+    margin: 0 0 6px 0;
+    color: var(--text);
+    letter-spacing: -0.01em;
+}
+
+.release-tagline {
+    font-size: 15px;
+    opacity: 0.7;
+    margin: 0 0 16px 0;
+    color: var(--text);
+}
+
+.release-meta {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.release-badge {
+    display: inline-block;
+    background: var(--accent, #5865f2);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 20px;
+    letter-spacing: 0.02em;
+}
+
+.release-date {
+    font-size: 14px;
+    opacity: 0.6;
+    color: var(--text);
+}
+
 .qa-section {
     display: flex;
     flex-direction: column;
@@ -3246,7 +3295,7 @@ input:checked+.slider:before {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 20;
+    z-index: 9;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.26s ease;

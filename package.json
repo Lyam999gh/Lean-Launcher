@@ -1,6 +1,6 @@
 {
   "name": "lean-launcher",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "productName": "Lean Launcher",
   "description": "Lean Launcher - Custom Minecraft Launcher",
   "main": "main.js",
@@ -13,7 +13,8 @@
     "build:linux": "electron-builder --linux",
     "build:all": "electron-builder --win --mac --linux",
     "build:dir": "electron-builder --dir",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "patch-package",
+    "postinstall:full": "patch-package && electron-builder install-app-deps"
   },
   "keywords": [],
   "author": "Lyam",
@@ -26,8 +27,10 @@
     "msmc": "^5.0.5"
   },
   "devDependencies": {
+    "@electron/get": "^5.0.0",
     "electron": "^42.2.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "patch-package": "^8.0.1"
   },
   "build": {
     "appId": "com.lyam.leanlauncher",

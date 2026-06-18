@@ -1,0 +1,13 @@
+# Place your macOS ARM64 JRE here
+
+Extract a JDK 25 (or compatible) JRE into this folder so it looks like:
+  jre/mac/Contents/Home/bin/java
+
+On macOS, a JDK distribution is a .jdk bundle (a directory).
+Copy or symlink the entire .jdk contents here.
+
+Example using Adoptium JDK 25:
+  cp -R /Library/Java/JavaVirtualMachines/jdk-25.jdk/* jre/mac/
+
+The launcher will resolve the binary at:
+  jre/mac/Contents/Home/bin/java

@@ -5,20 +5,23 @@
     "closeOnBoot": false,
     "simpleMode": false,
     "showFpsWarning": true,
-    "animation": "rain"
+    "animation": "bubbles"
   },
   "1.21.11": {
     "ram": "4096",
     "preset": "default",
     "jvmArgs": [],
     "javaPath": "",
-    "playtime": 0,
+    "playtime": 775592,
     "baseVersion": "1.21.11",
     "availableProfiles": [
       "full",
       "lightweight"
     ],
-    "activeProfile": "full"
+    "activeProfile": "lightweight",
+    "fabricLoaderVersion": "0.19.3",
+    "fabricInstallerVersion": "bundled",
+    "fabricProfileName": "fabric-loader-0.19.3-1.21.11"
   },
   "1.21.7": {
     "ram": "4096",
@@ -33,5 +36,33 @@
       "lightweight"
     ],
     "activeProfile": "lightweight"
+  },
+  "1.21.4": {
+    "ram": "4096",
+    "preset": "default",
+    "jvmArgs": [],
+    "javaPath": "",
+    "playtime": 0,
+    "baseVersion": "1.21.4",
+    "availableProfiles": [
+      "balanced",
+      "full",
+      "lightweight"
+    ],
+    "activeProfile": "lightweight"
+  },
+  "1.20": {
+    "ram": "4096",
+    "preset": "default",
+    "jvmArgs": [],
+    "javaPath": "",
+    "playtime": 0,
+    "baseVersion": "1.20",
+    "availableProfiles": [
+      "balanced",
+      "full",
+      "lightweight"
+    ],
+    "activeProfile": "balanced"
   }
 }

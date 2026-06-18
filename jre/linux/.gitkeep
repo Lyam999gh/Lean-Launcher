@@ -1,0 +1,7 @@
+# Place your Linux x64 JRE here
+
+Extract a JDK 25 (or compatible) JRE into this folder so it looks like:
+  jre/linux/bin/java
+
+The launcher will resolve the binary at:
+  jre/linux/bin/java

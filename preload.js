@@ -2,7 +2,7 @@
 // Each phase is wrapped individually so a failure in one never breaks another.
 
 (function () {
-  let contextBridge, ipcRenderer, clipboard, nativeImage, fs, path;
+  let contextBridge, ipcRenderer, clipboard, nativeImage;
   let initialTheme = 'light';
 
   // --- Phase 1: load dependencies ---
@@ -12,21 +12,24 @@
     ipcRenderer = electron.ipcRenderer;
     clipboard = electron.clipboard;
     nativeImage = electron.nativeImage;
-  } catch (e) { /* preload will continue with partial API */ }
-
-  try { fs = require('fs'); } catch (e) { /* fs not available */ }
-  try { path = require('path'); } catch (e) { /* path not available */ }
+  } catch (e) {
+    // electron modules failed to load
+  }
 
   // --- Phase 2: initial theme ---
   try {
+    const path = require('path');
+    const fs = require('fs');
     const appRootArg = process.argv && process.argv.find(a => a.startsWith('--app-root='));
-    const appRoot = appRootArg ? appRootArg.slice('--app-root='.length) : (path ? path.join(__dirname) : __dirname);
-    const settingsPath = path ? path.join(appRoot, 'settings.json') : null;
-    if (settingsPath && fs && fs.existsSync && fs.existsSync(settingsPath)) {
+    const appRoot = appRootArg ? appRootArg.slice('--app-root='.length) : path.join(__dirname);
+    const settingsPath = path.join(appRoot, 'settings.json');
+    if (fs.existsSync(settingsPath)) {
       const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
       initialTheme = (s._global && s._global.theme) || 'light';
     }
-  } catch (e) { /* theme will default to 'light' */ }
+  } catch (e) {
+    // theme loading failed, using default
+  }
 
   // --- Phase 3: expose API (partial exposure if modules failed) ---
   const api = { initialTheme };
@@ -49,7 +52,7 @@
     ]);
 
     const ALLOWED_EVENTS = new Set([
-      'auth-device-code', 'launch-update', 'launch-crash-report',
+      'auth-device-code', 'launch-update', 'launch-crash-report', 'launch-failed',
       'update-available', 'download-progress', 'update-downloaded', 'update-error'
     ]);
 

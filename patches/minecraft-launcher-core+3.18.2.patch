@@ -1,0 +1,473 @@
+diff --git a/node_modules/minecraft-launcher-core/.eslintrc.json b/node_modules/minecraft-launcher-core/.eslintrc.json
+old mode 100644
+new mode 100755
+diff --git a/node_modules/minecraft-launcher-core/.gitattributes b/node_modules/minecraft-launcher-core/.gitattributes
+old mode 100644
+new mode 100755
+diff --git a/node_modules/minecraft-launcher-core/.github/FUNDING.yml b/node_modules/minecraft-launcher-core/.github/FUNDING.yml
+old mode 100644
+new mode 100755
+diff --git a/node_modules/minecraft-launcher-core/LICENSE b/node_modules/minecraft-launcher-core/LICENSE
+old mode 100644
+new mode 100755
+diff --git a/node_modules/minecraft-launcher-core/README.md b/node_modules/minecraft-launcher-core/README.md
+old mode 100644
+new mode 100755
+diff --git a/node_modules/minecraft-launcher-core/components/authenticator.js b/node_modules/minecraft-launcher-core/components/authenticator.js
+old mode 100644
+new mode 100755
+diff --git a/node_modules/minecraft-launcher-core/components/handler.js b/node_modules/minecraft-launcher-core/components/handler.js
+old mode 100644
+new mode 100755
+index 111a797..e5a2628
+--- a/node_modules/minecraft-launcher-core/components/handler.js
++++ b/node_modules/minecraft-launcher-core/components/handler.js
+@@ -242,17 +242,49 @@ class Handler {
+         }
+         return true
+       } else {
+-        if (lib.rules[0].action === 'allow' && lib.rules[0].os) return lib.rules[0].os.name !== this.getOS()
++        if (lib.rules[0].action === 'allow' && lib.rules[0].os) {
++          // Check OS name mismatch
++          const osMismatch = lib.rules[0].os.name !== this.getOS()
++          // Check architecture mismatch (e.g., 'arm64' vs 'x86')
++          const arch = lib.rules[0].os.arch
++          const archMismatch = arch && !this.matchesArch(arch)
++          return osMismatch || archMismatch
++        }
+       }
+     } else {
+       return false
+     }
+   }
+ 
+-  async getNatives () {
+-    const nativeDirectory = path.resolve(this.options.overrides.natives || path.join(this.options.root, 'natives', this.version.id))
++  /**
++   * Check whether the current host architecture matches a rule's arch string.
++   * Handles different naming conventions (x86_64, x64, aarch64, arm64, etc.).
++   */
++  matchesArch (arch) {
++    const archMap = {
++      'x86': 'ia32',
++      'x86_64': 'x64',
++      'x64': 'x64',
++      'arm64': 'arm64',
++      'aarch64': 'arm64',
++    }
++    return (archMap[arch] || arch) === process.arch
++  }
+ 
+-    if (parseInt(this.version.id.split('.')[1]) >= 19) return this.options.overrides.cwd || this.options.root
++  async getNatives () {
++    // Use architecture-specific subdirectory to prevent mixing x86_64 and arm64 libraries
++    const archDir = process.arch === 'arm64' ? '-arm64' : ''
++    const nativeDirectory = path.resolve(this.options.overrides.natives || path.join(this.options.root, 'natives', this.version.id + archDir))
++
++    // Modern Minecraft (1.19+ or 26.x+) handles natives through LWJGL's
++    // SharedLibraryExtractPath, not via separate native extraction.
++    // Check both the old "1.x" and new "X.x" version schemes.
++    const verParts = this.version.id.split('.').map(Number);
++    const isModern = verParts.length >= 2 && (
++      (verParts[0] === 1 && verParts[1] >= 19) ||   // 1.19, 1.20, 1.21.x
++      verParts[0] >= 2                                 // 2.x, 26.x, etc.
++    );
++    if (isModern) return this.options.overrides.cwd || this.options.root
+ 
+     if (!fs.existsSync(nativeDirectory) || !fs.readdirSync(nativeDirectory).length) {
+       fs.mkdirSync(nativeDirectory, { recursive: true })
+@@ -263,8 +295,14 @@ class Handler {
+           if (!lib.downloads || !lib.downloads.classifiers) return
+           if (this.parseRule(lib)) return
+ 
++          // On macOS ARM64, prefer ARM64 natives; fall back to x86_64 natives.
++          // Some older version JSONs use "natives-osx" naming, newer use "natives-macos".
++          // The order matters: ARM64 first → generic x86_64 fallback.
+           const native = this.getOS() === 'osx'
+-            ? lib.downloads.classifiers['natives-osx'] || lib.downloads.classifiers['natives-macos']
++            ? (process.arch === 'arm64'
++                ? (lib.downloads.classifiers['natives-macos-arm64'] || lib.downloads.classifiers['natives-osx-arm64']
++                    || lib.downloads.classifiers['natives-macos'] || lib.downloads.classifiers['natives-osx'])
++                : (lib.downloads.classifiers['natives-macos'] || lib.downloads.classifiers['natives-osx']))
+             : lib.downloads.classifiers[`natives-${this.getOS()}`]
+ 
+           natives.push(native)
+@@ -305,6 +343,43 @@ class Handler {
+       this.client.emit('debug', '[MCLC]: Downloaded and extracted natives')
+     }
+ 
++    // --- Post-extraction ARM64 LWJGL 2.9.4 dylib override (macOS ARM64 only) ---
++    // MCLC downloads x86_64 Mojang-original dylibs.  On Apple Silicon with
++    // ARM64 Java, we must overwrite them with authentic ARM64-compiled dylibs
++    // from the LWJGL 2.9.4 community build.  Without this swap, the JVM throws
++    // UnsatisfiedLinkError ("missing compatible architecture").
++    // SKIPPED when _rosettaMode is set: x86_64 Java under Rosetta 2 uses the
++    // official Mojang x86_64 natives directly (Prism Launcher approach).
++    const rosettaMode = !!(this.client.options && this.client.options.overrides && this.client.options.overrides._rosettaMode);
++    if (this.getOS() === 'osx' && process.arch === 'arm64' && !rosettaMode) {
++      try {
++        // Look for ARM64 LWJGL 2.9.4 natives from the MinecraftMachina build:
++        // https://github.com/MinecraftMachina/lwjgl/releases
++        const cacheRoot = path.resolve(__dirname, '..', '..', '..', 'lwjgl-cache', 'natives');
++        const arm64Sources = [path.join(cacheRoot, '2.9.4'), path.join(cacheRoot, '3.3.3')];
++        for (const srcDir of arm64Sources) {
++          if (!fs.existsSync(srcDir)) continue;
++          const dylibs = fs.readdirSync(srcDir).filter(f => f.endsWith('.dylib'));
++          let replaced = 0;
++          for (const dylib of dylibs) {
++            const src = path.join(srcDir, dylib);
++            const dst = path.join(nativeDirectory, dylib);
++            if (fs.existsSync(src)) {
++              fs.copyFileSync(src, dst);
++              try { fs.chmodSync(dst, 0o755); } catch {}
++              replaced++;
++            }
++          }
++          if (replaced > 0) {
++            this.client.emit('debug', `[MCLC]: Overwrote ${replaced} x86_64 dylibs with ARM64 builds from ${path.basename(srcDir)}`);
++          }
++          break; // Use first available source
++        }
++      } catch (e) {
++        this.client.emit('debug', `[MCLC]: ARM64 dylib override error — ${e.message}`);
++      }
++    }
++
+     counter = 0
+     this.client.emit('debug', `[MCLC]: Set native path to ${nativeDirectory}`)
+ 
+diff --git a/node_modules/minecraft-launcher-core/components/launcher.js b/node_modules/minecraft-launcher-core/components/launcher.js
+old mode 100644
+new mode 100755
+index c7063a7..c4770b3
+--- a/node_modules/minecraft-launcher-core/components/launcher.js
++++ b/node_modules/minecraft-launcher-core/components/launcher.js
+@@ -10,7 +10,11 @@ class MCLCore extends EventEmitter {
+       this.options = { ...options }
+       this.options.root = path.resolve(this.options.root)
+       this.options.overrides = {
+-        detached: true,
++        // On macOS, detached spawn prevents Mach bootstrap port inheritance,
++        // which breaks WindowServer communication and makes Java windows
++        // invisible ("exec" icon in Activity Monitor).  Keep attached so
++        // the child inherits our GUI session context.
++        detached: process.platform !== 'darwin',
+         ...this.options.overrides,
+         url: {
+           meta: 'https://launchermeta.mojang.com',
+@@ -68,20 +72,40 @@ class MCLCore extends EventEmitter {
+ 
+       const args = []
+ 
++      // Prism-aligned JVM args: only flags that appear in Prism's resolved output
+       let jvm = [
+-        '-XX:-UseAdaptiveSizePolicy',
+-        '-XX:-OmitStackTraceInFastThrow',
+-        '-Dfml.ignorePatchDiscrepancies=true',
+-        '-Dfml.ignoreInvalidMinecraftCertificates=true',
+         `-Djava.library.path=${nativePath}`,
+         `-Xmx${this.handler.getMemory()[0]}`,
+         `-Xms${this.handler.getMemory()[1]}`
+       ]
++
++      // macOS: -XstartOnFirstThread must be the absolute first JVM arg.
++      // Do NOT inject -Djava.awt.headless here — LWJGL 2.x on macOS
++      // uses its own native display detection (CoreGraphics display
++      // mode calls), and AWT.headless overrides can interfere with
++      // Cocoa NSApplication registration that LWJGL 2 needs.
+       if (this.handler.getOS() === 'osx') {
+-        if (parseInt(versionFile.id.split('.')[1]) > 12) jvm.push(await this.handler.getJVM())
+-      } else jvm.push(await this.handler.getJVM())
++        jvm = [await this.handler.getJVM(), ...jvm]
++      } else {
++        jvm.push(await this.handler.getJVM())
++      }
+ 
+       if (this.options.customArgs) jvm = jvm.concat(this.options.customArgs)
++
++      // Inject version-JSON JVM flags that MCLC omits but are critical
++      // for native library extraction (LWJGL, JNA, Netty) — especially
++      // important on macOS where SharedLibraryExtractPath must be set
++      // for LWJGL to extract .dylib files correctly.
++      //
++      // These correspond to the "arguments.jvm" entries in Mojang's
++      // version JSON format that MCLC's handler does not process.
++      const nativeDir = nativePath;
++      jvm.push(`-Dorg.lwjgl.system.SharedLibraryExtractPath=${nativeDir}`);
++      jvm.push(`-Djna.tmpdir=${nativeDir}`);
++      jvm.push(`-Dio.netty.native.workdir=${nativeDir}`);
++      jvm.push(`-Dminecraft.launcher.brand=${this.options.launcherName || 'minecraft-launcher-core'}`);
++      jvm.push(`-Dminecraft.launcher.version=${this.options.launcherVersion || '3.18.2'}`);
++
+       if (this.options.overrides.logj4ConfigurationFile) {
+         jvm.push(`-Dlog4j.configurationFile=${path.resolve(this.options.overrides.logj4ConfigurationFile)}`)
+       }
+@@ -105,6 +129,17 @@ class MCLCore extends EventEmitter {
+       }
+ 
+       const classes = this.options.overrides.classes || this.handler.cleanUp(await this.handler.getClasses(modifyJson))
++      // Prism classpath ordering: jinput → lwjgl/lwjgl_util → minecraft
++      const prismOrder = ['jinput', 'lwjgl/', 'lwjgl_util', 'minecraft'];
++      const ordered = [];
++      const seen = new Set();
++      for (const prefix of prismOrder) {
++        for (const entry of classes) {
++          if (!seen.has(entry) && entry.includes(prefix)) { ordered.push(entry); seen.add(entry); }
++        }
++      }
++      for (const entry of classes) { if (!seen.has(entry)) ordered.push(entry); }
++      const orderedClasses = ordered;
+       const classPaths = ['-cp']
+       const separator = this.handler.getOS() === 'windows' ? ';' : ':'
+       this.emit('debug', `[MCLC]: Using ${separator} to separate class paths`)
+@@ -114,7 +149,7 @@ class MCLCore extends EventEmitter {
+       const jar = fs.existsSync(mcPath)
+         ? `${separator}${mcPath}`
+         : `${separator}${path.join(directory, `${this.options.version.number}.jar`)}`
+-      classPaths.push(`${this.options.forge ? this.options.forge + separator : ''}${classes.join(separator)}${jar}`)
++      classPaths.push(`${this.options.forge ? this.options.forge + separator : ''}${orderedClasses.join(separator)}${jar}`)
+       classPaths.push(file.mainClass)
+ 
+       this.emit('debug', '[MCLC]: Attempting to download assets')
+@@ -180,11 +215,233 @@ class MCLCore extends EventEmitter {
+   }
+ 
+   startMinecraft (launchArguments) {
+-    const minecraft = child.spawn(this.options.javaPath ? this.options.javaPath : 'java', launchArguments,
+-      { cwd: this.options.overrides.cwd || this.options.root, detached: this.options.overrides.detached })
++    // If spawnPrefix is set (e.g. ['arch', '-x86_64']), prepend it so the
++    // spawned command becomes: arch -x86_64 <javaPath> <launchArguments...>
++    const prefix = this.options.spawnPrefix || [];
++    const cmd  = prefix.length > 0 ? prefix[0] : (this.options.javaPath || 'java');
++    const args = prefix.length > 0
++      ? [...prefix.slice(1), this.options.javaPath || 'java', ...launchArguments]
++      : launchArguments;
++
++    // --- Kill zombie Minecraft processes from THIS instance only ---
++    try {
++      if (process.platform === 'darwin') {
++        const instanceDir = this.options.overrides.cwd || this.options.root;
++        const escapedDir = instanceDir.replace(/'/g, "'\\''");
++        child.execSync(
++          `pgrep -f 'net.minecraft.client.main.Main' 2>/dev/null | while read pid; do ` +
++          `if lsof -p "$pid" -Fn 2>/dev/null | grep -qF "${escapedDir}"; then ` +
++          `kill "$pid" 2>/dev/null; fi; done; exit 0`,
++          { stdio: 'ignore', timeout: 5000 }
++        );
++      }
++    } catch { /* ignore kill failures */ }
++
++    // --- Full command diagnostic ---
++    const fullCmd = [cmd, ...args].join(' ');
++    this.emit('debug', `[MCLC]: Full JVM command: ${fullCmd.substring(0, 4096)}${fullCmd.length > 4096 ? '...(truncated)' : ''}`);
++
++    // --- Sanitized environment ---
++    // Strip Electron/Node/Chrome/VS Code vars that can confuse AWT/WindowServer.
++    // Delete DISPLAY so LWJGL on macOS never tries X11 mode.
++    const cleanEnv = { ...process.env };
++    if (this.options.extraEnv) Object.assign(cleanEnv, this.options.extraEnv);
++    for (const key of Object.keys(cleanEnv)) {
++      if (key.startsWith('ELECTRON_') || key.startsWith('NODE_') || key.startsWith('CHROME_') || key.startsWith('VSCODE_')) {
++        delete cleanEnv[key];
++      }
++    }
++    delete cleanEnv['DISPLAY'];
++
++    // --- Critical macOS GUI vars: log whether they survived sanitization ---
++    const criticalMacVars = ['__CF_USER_TEXT_ENCODING', 'HOME', 'SECURITYSESSIONID', 'PATH', 'TMPDIR'];
++    for (const v of criticalMacVars) {
++      if (cleanEnv[v] !== undefined) {
++        this.emit('debug', `[MCLC]: Env var ${v}=${cleanEnv[v].substring(0, 80)}`);
++      } else {
++        this.emit('debug', `[MCLC]: Env var ${v}=<MISSING>`);
++      }
++    }
++
++    // ===================================================================
++    // macOS: launch via .app bundle for proper WindowServer registration
++    // ===================================================================
++    //
++    // Problem: When Electron spawns Java via child_process.spawn(), the
++    // child does NOT get registered with Launch Services / WindowServer.
++    // LWJGL windows are created but invisible — the game runs headless.
++    //
++    // Prism Launcher (native C++) avoids this because its own process
++    // was launched via Launch Services, so forked children inherit the
++    // GUI session naturally.
++    //
++    // Fix: Create a minimal .app bundle in a temp directory, launch it
++    // via `/usr/bin/open` (goes through Launch Services → proper Dock &
++    // WindowServer registration), then monitor the real Java PID so we
++    // correctly track process lifecycle.  The temp dir is only cleaned
++    // up when Java actually exits.
++    if (process.platform === 'darwin') {
++      try {
++        const self = this;
++        const os = require('os');
++        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lean-launcher-'));
++        const appBundle = path.join(tmpDir, 'Minecraft.app');
++        const appDir = path.join(appBundle, 'Contents', 'MacOS');
++        const resDir = path.join(appBundle, 'Contents', 'Resources');
++        fs.mkdirSync(appDir, { recursive: true });
++        fs.mkdirSync(resDir, { recursive: true });
++
++        const pidFile = path.join(resDir, 'java.pid');
++        const stdoutLog = path.join(resDir, 'stdout.log');
++        const stderrLog = path.join(resDir, 'stderr.log');
++
++        // Build shell-safe env exports using JSON.stringify for quoting
++        const envExports = Object.entries(cleanEnv)
++          .map(([k, v]) => `export ${JSON.stringify(k)}=${JSON.stringify(String(v))}`)
++          .join('\n');
++
++        const cwdDir = JSON.stringify(this.options.overrides.cwd || this.options.root);
++        const javaCmd = JSON.stringify(cmd);
++        const javaArgsStr = args.map(a => JSON.stringify(String(a))).join(' ');
++
++        // Wrapper script: writes its PID (which IS Java's PID after exec),
++        // changes to game dir, exports env, then exec's Java with stdout/stderr
++        // redirected to log files for tailing.
++        const wrapperScript = `#!/bin/bash
++echo $$ > ${JSON.stringify(pidFile)}
++cd ${cwdDir}
++${envExports}
++exec ${javaCmd} ${javaArgsStr} > ${JSON.stringify(stdoutLog)} 2> ${JSON.stringify(stderrLog)}
++`;
++
++        const wrapperPath = path.join(appDir, 'Minecraft');
++        fs.writeFileSync(wrapperPath, wrapperScript, { mode: 0o755 });
++
++        // Info.plist — LSUIElement=true keeps it off the Dock (game creates its own icon)
++        const plist = `<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0"><dict>
++  <key>CFBundleExecutable</key><string>Minecraft</string>
++  <key>CFBundleIdentifier</key><string>net.minecraft.client.leanlauncher</string>
++  <key>CFBundleName</key><string>Minecraft</string>
++  <key>CFBundlePackageType</key><string>APPL</string>
++  <key>LSUIElement</key><false/>
++</dict></plist>`;
++        fs.writeFileSync(path.join(appBundle, 'Contents', 'Info.plist'), plist);
++
++        this.emit('debug', `[MCLC]: macOS: .app bundle at ${appBundle}`);
++
++        // Launch via open (async — we don't track the open process)
++        child.spawn('/usr/bin/open', [appBundle], { stdio: 'ignore' });
++
++        // ================================================================
++        // Monitor the REAL Java process (not the open helper)
++        // ================================================================
++        let javaPid = null;
++        let monitorInterval = null;
++        let tailInterval = null;
++        let lastStdoutSize = 0;
++        let lastStderrSize = 0;
++
++        // Poll for the PID file (wrapper script writes it before exec'ing Java).
++        // Since the wrapper uses `exec`, the PID in the file IS Java's PID.
++        const pidPoll = setInterval(() => {
++          try {
++            if (fs.existsSync(pidFile)) {
++              const raw = fs.readFileSync(pidFile, 'utf-8').trim();
++              const pid = parseInt(raw, 10);
++              if (pid > 0) {
++                javaPid = pid;
++                clearInterval(pidPoll);
++                this.emit('debug', `[MCLC]: Java PID ${javaPid}`);
++
++                // --- Monitor process liveness ---
++                monitorInterval = setInterval(() => {
++                  try {
++                    process.kill(javaPid, 0); // signal 0 = existence check
++                  } catch {
++                    // Java exited
++                    clearInterval(monitorInterval);
++                    if (tailInterval) clearInterval(tailInterval);
++                    // Flush any remaining log output
++                    flushLogs();
++                    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
++                    this.emit('close', 0);
++                  }
++                }, 1000);
++
++                // --- Tail stdout/stderr log files ---
++                tailInterval = setInterval(() => flushLogs(), 400);
++              }
++            }
++          } catch { /* PID file not ready yet */ }
++        }, 250);
++
++        // Timeout: give up if PID file never appears
++        setTimeout(() => {
++          if (!javaPid) {
++            clearInterval(pidPoll);
++            this.emit('debug', '[MCLC]: Timed out waiting for Java PID — launch may have failed silently');
++            try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
++            this.emit('close', 1);
++          }
++        }, 20000);
++
++        function flushLogs() {
++          try {
++            if (fs.existsSync(stdoutLog)) {
++              const stat = fs.statSync(stdoutLog);
++              if (stat.size > lastStdoutSize) {
++                const buf = Buffer.alloc(stat.size - lastStdoutSize);
++                const fd = fs.openSync(stdoutLog, 'r');
++                fs.readSync(fd, buf, 0, buf.length, lastStdoutSize);
++                fs.closeSync(fd);
++                lastStdoutSize = stat.size;
++                const text = buf.toString('utf-8');
++                if (text) self.emit('data', text);
++              }
++            }
++          } catch { /* log file not ready yet */ }
++          try {
++            if (fs.existsSync(stderrLog)) {
++              const stat = fs.statSync(stderrLog);
++              if (stat.size > lastStderrSize) {
++                const buf = Buffer.alloc(stat.size - lastStderrSize);
++                const fd = fs.openSync(stderrLog, 'r');
++                fs.readSync(fd, buf, 0, buf.length, lastStderrSize);
++                fs.closeSync(fd);
++                lastStderrSize = stat.size;
++                const text = buf.toString('utf-8');
++                if (text) self.emit('data', text);
++              }
++            }
++          } catch { /* log file not ready yet */ }
++        }
++
++        // Return a process-like handle so the caller can kill Minecraft
++        const handle = new (require('events').EventEmitter)();
++        handle.kill = (sig) => {
++          if (javaPid) {
++            try { process.kill(javaPid, sig || 'SIGTERM'); } catch {}
++          }
++        };
++        handle.pid = 0;
++        // Store reference for external kill support
++        this._javaPid = () => javaPid;
++        return handle;
++      } catch (e) {
++        this.emit('debug', `[MCLC]: macOS .app bundle failed: ${e.message}`);
++      }
++    }
++
++    // --- Non-macOS or fallback: direct spawn ---
++    const minecraft = child.spawn(cmd, args,
++      { cwd: this.options.overrides.cwd || this.options.root, detached: this.options.overrides.detached, env: cleanEnv })
+     minecraft.stdout.on('data', (data) => this.emit('data', data.toString('utf-8')))
+     minecraft.stderr.on('data', (data) => this.emit('data', data.toString('utf-8')))
++    minecraft.on('error', (err) => this.emit('debug', `[MCLC]: Spawn error — ${err.message}`))
+     minecraft.on('close', (code) => this.emit('close', code))
++    this.emit('debug', `[MCLC]: Minecraft PID: ${minecraft.pid}`)
+     return minecraft
+   }
+ }
+diff --git a/node_modules/minecraft-launcher-core/index.d.ts b/node_modules/minecraft-launcher-core/index.d.ts
+old mode 100644
+new mode 100755
+diff --git a/node_modules/minecraft-launcher-core/index.js b/node_modules/minecraft-launcher-core/index.js
+old mode 100644
+new mode 100755

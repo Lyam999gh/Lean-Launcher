@@ -5,9 +5,69 @@ const { Client, Authenticator } = require("minecraft-launcher-core");
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const os = require('os');
+const javaManager = require('./lib/javaManager.js');
+const nativesManager = require('./lib/nativesManager.js');
+const launchExecutor = require('./lib/launchExecutor.js');
+const lwjglManager = require('./lib/lwjglManager.js');
 let launcher = null;
 const isDev = process.env.NODE_ENV === 'development';
 const debugLog = (...args) => { if (isDev) console.log(...args); };
+
+// --- Launch Diagnostics ---
+let launchBooted = false;
+let launchTimeoutId = null;
+const LAUNCH_TIMEOUT_MS = 480000; // 8 minutes for slow downloads and Fabric installer
+
+function clearLaunchTimeout() {
+    if (launchTimeoutId) { clearTimeout(launchTimeoutId); launchTimeoutId = null; }
+}
+
+function setLaunchTimeout(onTimeout) {
+    clearLaunchTimeout();
+    launchBooted = false;
+    launchTimeoutId = setTimeout(() => {
+        launchTimeoutId = null;
+        if (!launchBooted && typeof onTimeout === 'function') onTimeout();
+    }, LAUNCH_TIMEOUT_MS);
+}
+
+function markLaunchBooted() {
+    launchBooted = true;
+    clearLaunchTimeout();
+}
+
+// --- Cross-platform Java validation ---
+function validateJavaInstallation(javaPath, onProgress) {
+    return new Promise((resolve) => {
+        if (!javaPath || typeof javaPath !== 'string') {
+            return resolve({ valid: false, error: 'No Java path provided.', version: null, arch: null });
+        }
+        if (!fs.existsSync(javaPath)) {
+            return resolve({ valid: false, error: `Java executable not found at: ${javaPath}`, version: null, arch: null });
+        }
+
+        const { execFile } = require('child_process');
+        const child = execFile(javaPath, ['-version'], { timeout: 15000 });
+        let stderrOutput = '';
+
+        child.stderr.on('data', (data) => { stderrOutput += data.toString(); });
+        child.on('error', (err) => {
+            resolve({ valid: false, error: `Cannot execute Java: ${err.message}`, version: null, arch: null });
+        });
+        child.on('close', (code) => {
+            if (code !== 0) {
+                return resolve({ valid: false, error: `Java exited with code ${code}: ${stderrOutput.trim()}`, version: null, arch: null });
+            }
+            const versionMatch = stderrOutput.match(/version\s+"([^"]+)"/) || stderrOutput.match(/version\s+(\S+)/);
+            const is64Bit = /64-?[Bb]it/.test(stderrOutput);
+            const arch = is64Bit ? '64-bit' : '32-bit';
+            const version = versionMatch ? versionMatch[1] : 'unknown';
+            if (onProgress) onProgress(`Java ${version} (${arch}) detected`, 5);
+            resolve({ valid: true, error: null, version, arch });
+        });
+    });
+}
 
 const CLIENT_ID = process.env.AZURE_CLIENT_ID || '00000000402b5328';
 const CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET || null;
@@ -408,43 +468,82 @@ function getAuthAccounts() {
     return loadSavedAuth() || { ...DEFAULT_AUTH_STATE, accounts: [] };
 }
 
-async function downloadFile(url, destinationPath, onProgress) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
-    
-    try {
-        const response = await fetch(url, { signal: controller.signal });
-        if (!response.ok) throw new Error(`Failed to download ${url} (${response.status})`);
-        
-        const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-        await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
-        
-        const writer = fs.createWriteStream(destinationPath);
-        let downloadedBytes = 0;
-        
-        if (response.body) {
-            response.body.on('data', (chunk) => {
-                downloadedBytes += chunk.length;
-                if (onProgress && contentLength > 0) {
-                    const percent = Math.round((downloadedBytes / contentLength) * 100);
-                    onProgress(`Downloading... ${percent}%`);
-                }
-            });
-            await new Promise((resolve, reject) => {
-                response.body.pipe(writer);
-                writer.on('finish', resolve);
-                writer.on('error', reject);
-                response.body.on('error', reject);
-            });
-        } else {
-            const data = Buffer.from(await response.arrayBuffer());
-            await fs.promises.writeFile(destinationPath, data);
+// Retry-enabled fetch for JSON endpoints — helps with transient network failures
+async function retryFetchJson(url, maxRetries = 3) {
+    let lastError = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${url}`);
+            return await response.json();
+        } catch (error) {
+            lastError = error;
+            if (attempt < maxRetries - 1) {
+                const delay = Math.pow(2, attempt) * 500; // 0.5s, 1s, 2s
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
         }
-        
-        return destinationPath;
-    } finally {
-        clearTimeout(timeoutId);
     }
+    throw lastError || new Error(`Fetch failed after ${maxRetries} attempts: ${url}`);
+}
+
+async function downloadFile(url, destinationPath, onProgress) {
+    const maxRetries = 3;
+    let lastError = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 180000); // 180 second timeout
+
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            if (!response.ok) throw new Error(`Failed to download ${url} (${response.status})`);
+
+            const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+            await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
+
+            if (response.body) {
+                // Convert web ReadableStream to Node.js stream (Electron/Node 18+)
+                const { Readable } = require('stream');
+                const nodeStream = Readable.fromWeb(response.body);
+                const writer = fs.createWriteStream(destinationPath);
+                let downloadedBytes = 0;
+
+                nodeStream.on('data', (chunk) => {
+                    downloadedBytes += chunk.length;
+                    if (onProgress && contentLength > 0) {
+                        const percent = Math.round((downloadedBytes / contentLength) * 100);
+                        onProgress(`Downloading... ${percent}%`);
+                    }
+                });
+
+                await new Promise((resolve, reject) => {
+                    nodeStream.pipe(writer);
+                    writer.on('finish', resolve);
+                    writer.on('error', reject);
+                    nodeStream.on('error', reject);
+                });
+            } else {
+                const data = Buffer.from(await response.arrayBuffer());
+                await fs.promises.writeFile(destinationPath, data);
+            }
+
+            return destinationPath;
+        } catch (error) {
+            lastError = error;
+            // Clean up partial download
+            try { if (fs.existsSync(destinationPath)) fs.unlinkSync(destinationPath); } catch {}
+            if (attempt < maxRetries - 1) {
+                const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+                if (onProgress) onProgress(`Retrying download (attempt ${attempt + 2}/${maxRetries})...`, 0);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    throw lastError || new Error(`Download failed after ${maxRetries} attempts: ${url}`);
 }
 
 async function runJavaJar(javaExecutable, jarPath, args, onProgress) {
@@ -456,6 +555,7 @@ async function runJavaJar(javaExecutable, jarPath, args, onProgress) {
         );
         
         let lastUpdate = Date.now();
+        let stderrBuffer = '';
         const updateInterval = setInterval(() => {
             const elapsed = Math.floor((Date.now() - lastUpdate) / 1000);
             if (onProgress) onProgress(`Installing... (${elapsed}s elapsed)`);
@@ -470,6 +570,7 @@ async function runJavaJar(javaExecutable, jarPath, args, onProgress) {
         
         child.stderr?.on('data', (data) => {
             const output = data.toString();
+            stderrBuffer += output;
             debugLog(`[Installer Error] ${output}`);
         });
         
@@ -481,7 +582,9 @@ async function runJavaJar(javaExecutable, jarPath, args, onProgress) {
         child.on('close', (code) => {
             clearInterval(updateInterval);
             if (code !== 0) {
-                reject(new Error(`Installer exited with code ${code}`));
+                const stderrTail = stderrBuffer.slice(-500).trim();
+                const details = stderrTail ? ` — ${stderrTail}` : ' (no error output captured)';
+                reject(new Error(`Installer exited with code ${code}${details}`));
             } else {
                 resolve();
             }
@@ -491,7 +594,155 @@ async function runJavaJar(javaExecutable, jarPath, args, onProgress) {
 
 function resolveJavaExecutable(instanceSettings) {
     if (instanceSettings?.javaPath && fs.existsSync(instanceSettings.javaPath)) return instanceSettings.javaPath;
-    return process.platform === 'win32' ? 'java.exe' : 'java';
+
+    const javaBinary = process.platform === 'win32' ? 'java.exe' : 'java';
+
+    // ----------------------------------------------------------------
+    // Check system-installed JDKs (fallback if javaManager didn't run)
+    // ----------------------------------------------------------------
+    function findJavaInJdkRoots(roots) {
+        const candidates = [];
+        for (const jvmRoot of roots) {
+            if (!fs.existsSync(jvmRoot)) continue;
+            try {
+                const entries = fs.readdirSync(jvmRoot, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (!entry.isDirectory()) continue;
+                    const candidate = path.join(jvmRoot, entry.name, 'Contents', 'Home', 'bin', javaBinary);
+                    if (fs.existsSync(candidate)) {
+                        candidates.push({ path: candidate, name: entry.name });
+                    }
+                }
+            } catch { /* scan failed */ }
+        }
+        candidates.sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
+        return candidates.length ? candidates[0].path : null;
+    }
+
+    if (process.platform === 'darwin') {
+        const macJdkRoots = [
+            '/Library/Java/JavaVirtualMachines',
+            path.join(os.homedir(), 'Library/Java/JavaVirtualMachines')
+        ];
+        const macResult = findJavaInJdkRoots(macJdkRoots);
+        if (macResult) return macResult;
+    }
+
+    if (process.env.JAVA_HOME) {
+        const candidate = path.join(process.env.JAVA_HOME, 'bin', javaBinary);
+        if (fs.existsSync(candidate)) return candidate;
+    }
+
+    if (process.platform === 'linux') {
+        const linuxResult = findJavaInJdkRoots([
+            '/usr/lib/jvm', '/usr/lib64/jvm', '/usr/local/lib/jvm',
+            path.join(os.homedir(), '.sdkman/candidates/java'),
+            path.join(os.homedir(), '.local/share/fnm')
+        ]);
+        if (linuxResult) return linuxResult;
+    } else if (process.platform === 'win32') {
+        const winResult = findJavaInJdkRoots([
+            'C:\\Program Files\\Java',
+            'C:\\Program Files (x86)\\Java',
+            path.join(os.homedir(), '.jdks')
+        ]);
+        if (winResult) return winResult;
+    }
+
+    try {
+        const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+        const result = require('child_process').execFileSync(whichCmd, ['java'], { encoding: 'utf-8', timeout: 5000 }).trim();
+        const firstLine = result.split(/\r?\n/)[0].trim();
+        if (firstLine && fs.existsSync(firstLine)) return firstLine;
+    } catch { /* not in PATH */ }
+
+    return javaBinary;
+}
+
+/**
+ * Strip the macOS quarantine extended attribute (com.apple.quarantine) from
+ * a file or directory tree.  Downloaded archives extracted via HTTP inherit
+ * this attribute from the parent archive, which can cause the macOS
+ * Gatekeeper to block execution of executables (Java, native .dylib).
+ * @param {string} targetPath - Path to strip quarantine from
+ */
+function stripQuarantineXattr(targetPath) {
+    if (process.platform !== 'darwin') return;
+    if (!targetPath || !fs.existsSync(targetPath)) return;
+    try {
+        require('child_process').execFileSync(
+            '/usr/bin/xattr',
+            ['-rd', 'com.apple.quarantine', targetPath],
+            { timeout: 10000, stdio: 'ignore' }
+        );
+    } catch {
+        // xattr may fail silently (e.g., if the filesystem doesn't support it)
+    }
+}
+
+/**
+ * On macOS ARM64, find an x86_64 (Intel) JDK suitable for running under
+ * Rosetta 2. This is needed for pre-1.13 Minecraft versions whose LWJGL 2.x
+ * native libraries only exist as x86_64 binaries.
+ *
+ * Priority:
+ *   1. /usr/libexec/java_home -a x86_64  (Apple's native JDK locator)
+ *   2. Scan /Library/Java/JavaVirtualMachines for Intel-only JDKs
+ *   3. Fallback to the detected ARM64 JDK (Rosetta 2 will translate)
+ *
+ * @returns {string|null} Path to an x86_64 java binary, or null if not found.
+ */
+function resolveX8664JavaExecutable() {
+    if (process.platform !== 'darwin') return null;
+
+    const javaBinary = 'java';
+
+    // 1. Use Apple's java_home utility to find x86_64 JDK
+    try {
+        const result = require('child_process').execFileSync(
+            '/usr/libexec/java_home',
+            ['-a', 'x86_64', '--failfast'],
+            { encoding: 'utf-8', timeout: 5000 }
+        ).trim();
+        if (result) {
+            const candidate = path.join(result, 'bin', javaBinary);
+            if (fs.existsSync(candidate)) return candidate;
+        }
+    } catch { /* no x86_64 JDK via java_home */ }
+
+    // 2. Scan common JDK locations for an Intel-only JDK
+    const macJavaDirs = [
+        '/Library/Java/JavaVirtualMachines',
+        path.join(os.homedir(), 'Library/Java/JavaVirtualMachines'),
+    ];
+    for (const jvmRoot of macJavaDirs) {
+        if (!fs.existsSync(jvmRoot)) continue;
+        try {
+            const entries = fs.readdirSync(jvmRoot, { withFileTypes: true });
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+                const candidate = path.join(jvmRoot, entry.name, 'Contents', 'Home', 'bin', javaBinary);
+                if (!fs.existsSync(candidate)) continue;
+                // Check if it's x86_64-only (not universal/arm64)
+                try {
+                    const archOut = require('child_process').execFileSync(
+                        'file', [candidate],
+                        { encoding: 'utf-8', timeout: 3000 }
+                    );
+                    // "Mach-O 64-bit executable x86_64" = Intel only
+                    // "Mach-O 64-bit bundle x86_64" = Intel only
+                    // "Mach-O 64-bit executable arm64" = ARM64 only
+                    // "Mach-O 64-bit executable x86_64; arm64" = universal (fat binary)
+                    if (/x86_64/.test(archOut) && !/arm64/.test(archOut)) {
+                        return candidate;
+                    }
+                } catch { /* skip this candidate */ }
+            }
+        } catch { /* scan failed */ }
+    }
+
+    // 3. Fallback to any available JDK — arch -x86_64 will translate it
+    return null;
 }
 
 async function ensureLauncherProfiles(mcRoot) {
@@ -515,15 +766,31 @@ async function resolveFabricInstall(baseVersion, instanceSettings) {
     const loaderVersion = instanceSettings?.fabricLoaderVersion || null;
     const installerVersion = instanceSettings?.fabricInstallerVersion || null;
 
+    // 1. Check for bundled Fabric installer (ships with the launcher — no download needed)
+    const bundledInstallerPath = path.join(resourcesRoot, 'installers', 'fabric-installer.jar');
+    if (fs.existsSync(bundledInstallerPath) && fs.statSync(bundledInstallerPath).size > 1024) {
+        // Still need loader version from API for the profile name, but skip installer download
+        let resolvedLoaderVersion = loaderVersion;
+        if (!resolvedLoaderVersion) {
+            const loaders = await retryFetchJson(`https://meta.fabricmc.net/v2/versions/loader/${baseVersion}`);
+            resolvedLoaderVersion = loaders.find(entry => entry?.loader?.stable)?.loader?.version
+                || loaders[0]?.loader?.version;
+        }
+        if (!resolvedLoaderVersion) throw new Error(`No Fabric loader version found for ${baseVersion}`);
+        const profileName = `fabric-loader-${resolvedLoaderVersion}-${baseVersion}`;
+        return { loaderVersion: resolvedLoaderVersion, installerVersion: 'bundled', profileName, installerJarPath: bundledInstallerPath, installerUrl: null };
+    }
+
+    // 2. Fallback: download the installer from Fabric's servers
     const [loaderResponse, installerResponse] = await Promise.all([
-        loaderVersion ? Promise.resolve(null) : fetch(`https://meta.fabricmc.net/v2/versions/loader/${baseVersion}`),
-        installerVersion ? Promise.resolve(null) : fetch('https://meta.fabricmc.net/v2/versions/installer')
+        loaderVersion ? Promise.resolve(null) : retryFetchJson(`https://meta.fabricmc.net/v2/versions/loader/${baseVersion}`),
+        installerVersion ? Promise.resolve(null) : retryFetchJson('https://meta.fabricmc.net/v2/versions/installer')
     ]);
 
-    const loaders = loaderVersion ? [] : await loaderResponse.json();
-    const installers = installerVersion ? [] : await installerResponse.json();
+    const loaders = loaderVersion ? [] : loaderResponse;
+    const installers = installerVersion ? [] : installerResponse;
 
-    const resolvedLoaderVersion = loaderVersion || loaders.find(entry => entry?.loader?.stable) ?.loader?.version || loaders[0]?.loader?.version;
+    const resolvedLoaderVersion = loaderVersion || loaders.find(entry => entry?.loader?.stable)?.loader?.version || loaders[0]?.loader?.version;
     const resolvedInstallerVersion = installerVersion || installers.find(entry => entry?.stable)?.version || installers[0]?.version;
 
     if (!resolvedLoaderVersion) throw new Error(`No Fabric loader version found for ${baseVersion}`);
@@ -541,26 +808,32 @@ async function ensureVanillaVersionExists(baseVersion, mcRoot, onProgress) {
     const vanillaVersionJson = path.join(vanillaVersionDir, `${baseVersion}.json`);
     const vanillaVersionJar = path.join(vanillaVersionDir, `${baseVersion}.jar`);
     
-    // Check if already downloaded
-    if (fs.existsSync(vanillaVersionJson) && fs.existsSync(vanillaVersionJar)) {
+    // Verify both files exist AND have valid content (not zero-byte leftovers)
+    const jsonValid = fs.existsSync(vanillaVersionJson) && fs.statSync(vanillaVersionJson).size > 1024;
+    const jarValid = fs.existsSync(vanillaVersionJar) && fs.statSync(vanillaVersionJar).size > 1024;
+    if (jsonValid && jarValid) {
         return;
+    }
+    
+    // Clean up any corrupted files before downloading fresh
+    if (fs.existsSync(vanillaVersionJson) && !jsonValid) {
+        try { fs.unlinkSync(vanillaVersionJson); } catch {}
+    }
+    if (fs.existsSync(vanillaVersionJar) && !jarValid) {
+        try { fs.unlinkSync(vanillaVersionJar); } catch {}
     }
     
     debugLog(`Pre-downloading vanilla Minecraft ${baseVersion} for Fabric installer...`);
     if (onProgress) onProgress(`Setting up vanilla Minecraft ${baseVersion}...`, 20);
     
     // Download version manifest
-    const manifestResponse = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest.json');
-    if (!manifestResponse.ok) throw new Error('Failed to fetch version manifest');
-    const manifest = await manifestResponse.json();
+    const manifest = await retryFetchJson('https://launchermeta.mojang.com/mc/game/version_manifest.json');
     
     const versionEntry = manifest.versions.find(v => v.id === baseVersion);
     if (!versionEntry) throw new Error(`Vanilla version ${baseVersion} not found in manifest`);
     
     // Download version JSON
-    const versionJsonResponse = await fetch(versionEntry.url);
-    if (!versionJsonResponse.ok) throw new Error(`Failed to fetch version JSON for ${baseVersion}`);
-    const versionJson = await versionJsonResponse.json();
+    const versionJson = await retryFetchJson(versionEntry.url);
     
     // Ensure directory exists
     await fs.promises.mkdir(vanillaVersionDir, { recursive: true });
@@ -591,13 +864,36 @@ async function ensureFabricInstalled(baseVersion, instanceSettings, mcRoot, sele
 
     if (!fs.existsSync(profileJson) || !fs.existsSync(profileJar)) {
         if (onProgress) onProgress(`Installing Fabric ${installInfo.loaderVersion}...`, 25);
-        if (!fs.existsSync(installInfo.installerJarPath)) {
+        
+        // Download installer if not present or bundled
+        if (!fs.existsSync(installInfo.installerJarPath) && installInfo.installerUrl) {
             await downloadFile(installInfo.installerUrl, installInfo.installerJarPath, (msg) => {
                 if (onProgress) onProgress(msg, 26);
             });
         }
 
-        const javaExecutable = resolveJavaExecutable(instanceSettings);
+        // Verify the installer JAR is valid
+        if (!fs.existsSync(installInfo.installerJarPath) || fs.statSync(installInfo.installerJarPath).size < 1024) {
+            if (installInfo.installerUrl) {
+                // Corrupted — delete and re-download
+                try { fs.unlinkSync(installInfo.installerJarPath); } catch {}
+                await downloadFile(installInfo.installerUrl, installInfo.installerJarPath, (msg) => {
+                    if (onProgress) onProgress(msg, 26);
+                });
+            } else {
+                throw new Error('Bundled Fabric installer is missing or corrupted. Please reinstall the launcher.');
+            }
+        }
+
+        // Use javaManager to get a Java for the Minecraft version (Fabric installer
+        // itself requires Java 17+). If it fails, fall back to system Java.
+        let javaExecutable = null;
+        try {
+            const result = await javaManager.resolveJava(baseVersion, appRoot, onProgress);
+            javaExecutable = result.javaPath;
+        } catch {
+            javaExecutable = resolveJavaExecutable(instanceSettings);
+        }
         debugLog(`Running Fabric installer: ${installInfo.installerJarPath}`);
         
         // Ensure launcher_profiles.json exists for Fabric installer
@@ -605,18 +901,41 @@ async function ensureFabricInstalled(baseVersion, instanceSettings, mcRoot, sele
         
         if (onProgress) onProgress(`Installing Fabric loader (this may take 5-10 minutes)...`, 30);
         
-        try {
-            await runJavaJar(javaExecutable, installInfo.installerJarPath, [
-                'client',
-                '-dir', mcRoot,
-                '-mcversion', baseVersion,
-                '-loader', installInfo.loaderVersion,
-                '-downloadMinecraft'
-            ], onProgress);
-        } catch (error) {
-            console.error(`Fabric installer failed: ${error.message}`);
-            throw error;
+        let installerError = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                await runJavaJar(javaExecutable, installInfo.installerJarPath, [
+                    'client',
+                    '-dir', mcRoot,
+                    '-mcversion', baseVersion,
+                    '-loader', installInfo.loaderVersion,
+                    '-downloadMinecraft'
+                ], onProgress);
+                installerError = null;
+                break;
+            } catch (error) {
+                installerError = error;
+                console.error(`Fabric installer attempt ${attempt + 1} failed: ${error.message}`);
+                
+                if (attempt === 0) {
+                    // Clean up partial install before retry
+                    if (onProgress) onProgress(`Installer failed, cleaning up and retrying...`, 28);
+                    try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch {}
+                    // Also remove vanilla version files — they may be corrupted
+                    const vanillaDir = path.join(mcRoot, 'versions', baseVersion);
+                    try {
+                        const vanillaJson = path.join(vanillaDir, `${baseVersion}.json`);
+                        const vanillaJar = path.join(vanillaDir, `${baseVersion}.jar`);
+                        if (fs.existsSync(vanillaJson)) fs.unlinkSync(vanillaJson);
+                        if (fs.existsSync(vanillaJar)) fs.unlinkSync(vanillaJar);
+                    } catch {}
+                    // Re-download vanilla before retry
+                    await ensureVanillaVersionExists(baseVersion, mcRoot, onProgress);
+                }
+            }
         }
+        
+        if (installerError) throw installerError;
     }
 
     const allSettings = loadSettings();
@@ -634,9 +953,7 @@ async function resolveForgeInstall(baseVersion, instanceSettings, selectedVersio
     let resolvedForgeBuild = forgeBuild;
 
     if (!resolvedForgeBuild) {
-        const promotionsResponse = await fetch('https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json');
-        if (!promotionsResponse.ok) throw new Error('Failed to fetch Forge promotions');
-        const promotions = await promotionsResponse.json();
+        const promotions = await retryFetchJson('https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json');
         resolvedForgeBuild = promotions?.promos?.[`${baseVersion}-recommended`] || promotions?.promos?.[`${baseVersion}-latest`];
     }
 
@@ -719,65 +1036,183 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
     const mcRoot = path.join(appRoot, "minecraft");
     if (!fs.existsSync(gameRoot)) fs.mkdirSync(gameRoot, { recursive: true });
 
-    // Auto-detect Java if no custom path is set
+    // -------------------------------------------------------------------
+    // Java resolution: prefer user-set custom path, else auto-download.
+    // resolveJava is now architecture-aware — for legacy versions (< 1.13)
+    // on ARM64 macOS it downloads an x86_64 JDK automatically.
+    // -------------------------------------------------------------------
     let javaPath = instanceSettings?.javaPath || '';
-    if (!javaPath || !fs.existsSync(javaPath)) {
-        const { execSync, execFileSync } = require('child_process');
+    let javaVersion = null;
 
-        // macOS: try java_home first (handles JDK installations correctly)
-        if (process.platform === 'darwin') {
-            try {
-                javaPath = execFileSync('/usr/libexec/java_home', ['-v', '17'], { encoding: 'utf-8', timeout: 5000 }).trim();
-                if (javaPath) javaPath = path.join(javaPath, 'bin', 'java');
-            } catch {
-                try {
-                    javaPath = execFileSync('/usr/libexec/java_home', [], { encoding: 'utf-8', timeout: 5000 }).trim();
-                    if (javaPath) javaPath = path.join(javaPath, 'bin', 'java');
-                } catch { /* fall through */ }
+    const isLegacyLwjgl2 = javaManager.compareVersions(launchVersion, '1.13') < 0;
+    const isModernArm64  = process.platform === 'darwin' && process.arch === 'arm64';
+    const isLegacyArm64  = isModernArm64 && isLegacyLwjgl2;
+
+    if (javaPath && fs.existsSync(javaPath)) {
+        if (onProgress) onProgress(`Using custom Java at ${javaPath}`, 3);
+        console.log(`[LAUNCH] Using custom Java: ${javaPath}`);
+        try {
+            const ver = await javaManager.validateJavaBinary(javaPath);
+            javaVersion = ver;
+            console.log(`[LAUNCH] Custom Java version: ${ver}`);
+        } catch (err) {
+            throw new Error(`Custom Java at "${javaPath}" is not valid: ${err.message}`);
+        }
+    } else {
+        // Prism Launcher approach for pre-1.13 on Apple Silicon:
+        // x86_64 Java 8 under Rosetta 2 with official Mojang x86_64 natives.
+        // Community ARM64 LWJGL 2.9.4 builds crash AWT/Cocoa on modern macOS.
+        const javaOpts = isLegacyArm64 ? { adoptArch: 'x64' } : undefined;
+        if (onProgress) onProgress(`Resolving Java for ${launchVersion}${isLegacyArm64 ? ' (x86_64 Rosetta 2)' : ''}...`, 2);
+        console.log(`[LAUNCH] Resolving Java for ${launchVersion}${isLegacyArm64 ? ' — x86_64 Rosetta 2 mode' : ''}`);
+        const result = await javaManager.resolveJava(launchVersion, appRoot, onProgress, javaOpts);
+        javaPath = result.javaPath;
+        javaVersion = result.javaVersion;
+        console.log(`[LAUNCH] Using ${result.downloaded ? 'downloaded' : 'cached'} Java: ${javaPath}`);
+        console.log(`[LAUNCH] Java version: ${javaVersion}`);
+    }
+
+    // --- Java version validation ---
+    // Read the vanilla version JSON for the REQUIRED Java major version.
+    // The version JSON comes from Mojang's metadata and contains the
+    // "javaVersion.majorVersion" field that MCLC expects.
+    const vanillaVersionJsonPath = path.join(mcRoot, 'versions', launchVersion, `${launchVersion}.json`);
+    let requiredJavaMajor = null;
+    let versionJsonMajor = null;
+    try {
+        if (fs.existsSync(vanillaVersionJsonPath)) {
+            const vJson = JSON.parse(fs.readFileSync(vanillaVersionJsonPath, 'utf-8'));
+            if (vJson.javaVersion && typeof vJson.javaVersion.majorVersion === 'number') {
+                versionJsonMajor = vJson.javaVersion.majorVersion;
             }
         }
+    } catch { /* version JSON not available */ }
 
-        // Try `which java` (works on most Unix systems)
-        if (!javaPath || !fs.existsSync(javaPath)) {
+    // Use javaManager's table as fallback (covers all versions)
+    requiredJavaMajor = versionJsonMajor || javaManager.getRequiredJavaMajor(launchVersion);
+
+    // Hoist: used later for module-compat flags
+    const javaMajorVersion = javaManager.parseJavaMajorVersion(javaVersion || '');
+
+    if (requiredJavaMajor) {
+        console.log(`[LAUNCH] Java version check: running=${javaMajorVersion}, required=${requiredJavaMajor}+`);
+
+        if (javaMajorVersion > 0 && javaMajorVersion < requiredJavaMajor) {
+            // Auto-download the correct Java version instead of throwing.
+            console.log(`[LAUNCH] Java ${javaMajorVersion} insufficient for ${launchVersion} (needs ${requiredJavaMajor}+). Auto-downloading...`);
+            if (onProgress) onProgress(`Java ${javaMajorVersion} insufficient — downloading Java ${requiredJavaMajor}...`, 2);
             try {
-                javaPath = execFileSync('which', ['java'], { encoding: 'utf-8' }).trim();
-            } catch {
-                try { javaPath = execSync('which java 2>/dev/null || echo /usr/bin/java', { encoding: 'utf-8' }).trim(); } catch { javaPath = process.platform === 'win32' ? 'java.exe' : 'java'; }
+                const result = await javaManager.resolveJava(launchVersion, appRoot, onProgress);
+                javaPath = result.javaPath;
+                javaVersion = result.javaVersion;
+                console.log(`[LAUNCH] Auto-downloaded Java: ${javaPath} (${javaVersion})`);
+                if (onProgress) onProgress(`Auto-downloaded Java ${result.javaVersion}`, 4);
+            } catch (dlErr) {
+                throw new Error(
+                    `Minecraft ${launchVersion} requires Java ${requiredJavaMajor}+, ` +
+                    `but the selected Java binary is version ${javaMajorVersion} ` +
+                    `(${javaPath}). Attempted to auto-download Java ${requiredJavaMajor} ` +
+                    `but it failed: ${dlErr.message}`
+                );
             }
+        } else {
+            console.log(`[LAUNCH] Java ${javaMajorVersion} meets requirement (Java ${requiredJavaMajor}+) ✓`);
         }
-
-        // macOS Homebrew fallback paths (both architectures)
-        if (!fs.existsSync(javaPath) && process.platform === 'darwin') {
-            const macOSFallbackPaths = [
-                '/opt/homebrew/bin/java',          // Apple Silicon Homebrew
-                '/usr/local/bin/java',             // Intel Homebrew
-                '/opt/homebrew/opt/openjdk@17/bin/java',
-                '/usr/local/opt/openjdk@17/bin/java',
-                '/opt/homebrew/opt/openjdk@21/bin/java',
-                '/usr/local/opt/openjdk@21/bin/java'
-            ];
-            for (const candidate of macOSFallbackPaths) {
-                if (fs.existsSync(candidate)) { javaPath = candidate; break; }
-            }
-        }
-
-        // Unix: scan /usr/lib/jvm for Java installations
-        if (!fs.existsSync(javaPath) && process.platform !== 'win32') {
-            try {
-                const result = execFileSync('find', ['/usr/lib/jvm', '-name', 'java', '-type', 'f'], { encoding: 'utf-8', timeout: 5000 });
-                const firstMatch = result.split('\n')[0]?.trim();
-                if (firstMatch) javaPath = firstMatch;
-            } catch {}
-        }
+    } else {
+        console.log(`[LAUNCH] No Java version requirement found — proceeding with ${javaVersion}`);
     }
 
     let opts = {
         clientPackage: null, authorization, root: mcRoot,
-        overrides: { gameDirectory: gameRoot },
+        overrides: {
+            gameDirectory: gameRoot,
+            // macOS: tell LWJGL to extract native .dylib files into the game
+            // directory rather than a system temp path, avoiding permission
+            // issues with macOS SIP / notarization on temp directories
+            natives: null, // set below
+        },
         version: { number: launchVersion, type: "release" },
         memory: { max: `${instanceSettings.ram}M`, min: "2048M" },
-        javaPath: javaPath || undefined
+        javaPath: javaPath || undefined,
+        launcherName: 'lean-launcher',
+        launcherVersion: '1.0.0',
+        // macOS lifecycle flags: MCLC's startMinecraft uses these to
+        // register the process with Launch Services so the window appears
+        // (without this, LWJGL windows are created but invisible on macOS).
+        ...(process.platform === 'darwin' ? {
+            extraEnv: {
+                // For pre-1.13 + Rosetta 2: headless=true prevents AWT from
+                // trying to initialize Cocoa's display connection, which
+                // crashes under Rosetta 2 translation.
+                // For native ARM64: LWJGL 3.x doesn't use AWT, so no flag needed.
+            }
+        } : {}),
     };
+
+    // -------------------------------------------------------------------
+    // macOS ARM64: version-scoped natives + x86_64 enforcement for pre-1.13
+    // -------------------------------------------------------------------
+    // Every version on ARM64 gets a dedicated, version-specific natives
+    // directory so paths never cross-contaminate.
+    //
+    // For 1.13 – 1.18.2 we deploy LWJGL 3.3.3 arm64 *.dylib files.
+    // For < 1.13  LWJGL 2 dylibs are x86_64 only — the JVM MUST be x86_64
+    //            so Rosetta 2 translates it (and its dlopen calls).
+    //
+    // (isLegacyLwjgl2, isModernArm64, isLegacyArm64 are declared above)
+
+    // Rosetta 2 for pre-1.13 on ARM64: x86_64 Java + official Mojang x86_64 natives
+    if (isLegacyArm64) {
+        opts.spawnPrefix = ['arch', '-x86_64'];
+        opts._rosettaMode = true;
+        opts.overrides._rosettaMode = true;
+        console.log('[LAUNCH] Rosetta 2 active — x86_64 Java + official Mojang LWJGL 2.9.4 natives');
+    }
+
+    // --- Step A: LWJGL 3.3.3 swap for 1.13 – 1.18.2 ---
+    const lwjglPatch = await lwjglManager.prepareLwjglArm64Swap(launchVersion, appRoot, mcRoot, onProgress);
+    if (lwjglPatch.needed) {
+        if (onProgress) onProgress('Applying LWJGL ARM64 compatibility patch...', 16);
+        console.log(`[LAUNCH] LWJGL ARM64 patch active — natives: ${lwjglPatch.nativesDir}`);
+        opts.overrides.natives = lwjglPatch.nativesDir;
+        opts._lwjglNeedsPatch = true;
+    }
+
+    // --- Step B: Use nativesManager for consistent native path + extraction ---
+    if (!opts.overrides.natives) {
+        const isMacArm64 = process.platform === 'darwin' && process.arch === 'arm64' && !opts._rosettaMode;
+        const nativeFolder = nativesManager.getNativesFolderName(selectedVersion, { isMacArm64 });
+        const versionNativePath = nativesManager.getNativesPath(mcRoot, selectedVersion, { isMacArm64 });
+        await fs.promises.mkdir(versionNativePath, { recursive: true });
+
+        // If we have the version JSON, pre-extract native libraries
+        try {
+            const versionJsonPath = path.join(mcRoot, 'versions',
+                opts.version.custom || selectedVersion,
+                `${opts.version.custom || selectedVersion}.json`);
+            if (fs.existsSync(versionJsonPath)) {
+                const versionJson = JSON.parse(fs.readFileSync(versionJsonPath, 'utf-8'));
+                await nativesManager.ensureNatives(mcRoot, selectedVersion, versionJson, {
+                    isMacArm64,
+                    onProgress
+                });
+            }
+        } catch (nativeErr) {
+            console.warn('[LAUNCH] Native extraction fallback:', nativeErr.message);
+        }
+
+        opts.overrides.natives = versionNativePath;
+    }
+
+    // Pass Rosetta mode flag through to MCLC handler so it skips
+    // the ARM64 dylib override (we want official Mojang x86_64 natives).
+    if (opts._rosettaMode) {
+        opts.overrides._rosettaMode = true;
+    }
+
+    // Step C removed: On Apple Silicon we use a native ARM64 JDK (from
+    // javaManager's Azul Zulu or Adoptium download).  LWJGL 2.9.4 ships
+    // official arm64 dylibs that the ARM64 JVM loads directly. No Rosetta.
 
     function readTailLines(filePath, maxLines = 60) {
         try {
@@ -843,6 +1278,9 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
             }
         } catch { /* log parsing failed */ }
 
+        // Detect architecture mismatch (Intel Java + ARM64 natives)
+        const isMacArm64 = process.platform === 'darwin' && process.arch === 'arm64';
+        
         return {
             timestamp: new Date().toISOString(),
             version: selectedVersion,
@@ -852,6 +1290,9 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
             jvmArgs: Array.isArray(instanceSettings?.jvmArgs) ? instanceSettings.jvmArgs.join(' ') : (instanceSettings?.jvmArgs || null),
             javaPath: instanceSettings?.javaPath || null,
             customType: effectiveCustomType || null,
+            platform: process.platform,
+            arch: process.arch,
+            isRosettaPreferred: isLegacyArm64,  /* x86_64 Java under Rosetta 2 for pre-1.13 */
             message: baseMessage,
             code: typeof code === 'number' ? code : null,
             signal: signal || null,
@@ -859,6 +1300,8 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
             javaVersionLogLine,
             errorClass,
             errorSummary,
+            nativeLibraryError: errorSummary ? /UnsatisfiedLinkError|no .+ in java\.library\.path|Can't load|\.dylib/.test(errorSummary) : false,
+            javaMajorMismatch: errorSummary ? /major version|UnsupportedClassVersionError/.test(errorSummary) : false,
             latestLogTail: readTailLines(latestLogPath, 120),
             crashReportFile: latestCrash?.name || null,
             crashReportPreview: latestCrash ? readTailLines(latestCrash.fullPath, 120) : null
@@ -880,6 +1323,10 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
         const forgeInstall = await ensureForgeInstalled(launchVersion, instanceSettings, mcRoot, selectedVersion, onProgress);
         opts.forge = forgeInstall.installerJarPath;
         if (onProgress) onProgress(`Prepared Forge ${forgeInstall.forgeBuild}`, 35);
+    } else {
+        // Vanilla: ensure version JSON and JAR are on disk for MCLC
+        await ensureVanillaVersionExists(launchVersion, mcRoot, onProgress);
+        if (onProgress) onProgress(`Ready — Vanilla ${launchVersion}`, 35);
     }
 
     if (launchProfile) {
@@ -894,12 +1341,87 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
         }
     }
 
-    if (instanceSettings.preset === 'optimized') opts.customArgs = ["-XX:+UseG1GC", "-XX:-UseAdaptiveSizePolicy", "-XX:-OmitStackTraceInFastThrow", "-XX:MaxGCPauseMillis=200"];
-    else if (instanceSettings.preset === 'custom' && instanceSettings.jvmArgs) {
+    // Apply preset or custom JVM arguments (filtered to avoid duplicates)
+    if (instanceSettings.preset === 'optimized') {
+        opts.customArgs = ["-XX:+UseG1GC", "-XX:-UseAdaptiveSizePolicy", "-XX:-OmitStackTraceInFastThrow", "-XX:MaxGCPauseMillis=200"];
+    } else if (instanceSettings.preset === 'custom' && instanceSettings.jvmArgs) {
         const args = Array.isArray(instanceSettings.jvmArgs) ? instanceSettings.jvmArgs : String(instanceSettings.jvmArgs).trim().split(/\s+/).filter(Boolean);
         if (args.length) opts.customArgs = args;
+    } else {
+        opts.customArgs = [];
     }
-    if (instanceSettings.javaPath && fs.existsSync(instanceSettings.javaPath)) opts.javaPath = instanceSettings.javaPath;
+
+    // Strip any user-supplied flags that MCLC or we set automatically
+    // so they never appear twice.
+    opts.customArgs = opts.customArgs.filter(arg =>
+        !arg.startsWith('-Djava.library.path=') &&
+        !arg.startsWith('-Xmx') &&
+        !arg.startsWith('-Xms') &&
+        arg !== '-XstartOnFirstThread'
+    );
+
+    // macOS: When spawned from Electron, the JVM auto-detects headless mode
+    // because the Electron process environment looks like a background task.
+    // Prism (native C++) doesn't need these; they are Electron-specific.
+    //
+    // Note: -Djava.awt.headless=false is injected at position 1 in MCLC's
+    // launcher.js (right after -XstartOnFirstThread) so it's parsed before
+    // any AWT classes load — do NOT add it here (would duplicate).
+    if (process.platform === 'darwin') {
+        opts.customArgs.push(
+            // Dock/WindowServer registration — critical on Java 8 for
+            // Cocoa NSApplication to be recognised as a GUI process.
+            '-Dcom.apple.mrj.application.apple.menu.about.name=Minecraft',
+            // LWJGL 2 debug output — logs window creation/display mode
+            '-Dorg.lwjgl.opengl.Display.enableDebug=true',
+            '-Dorg.lwjgl.util.Debug=true'
+        );
+        console.log('[LAUNCH] macOS Electron workaround: Dock=about.name=Minecraft, LWJGL debug');
+    }
+
+    // --- macOS AWT workaround removed ---
+    // On native ARM64 Java 8 with LWJGL 2.9.4, the Cocoa AWT bridge is
+    // selected automatically.  CToolkit/DISPLAY overrides are unnecessary
+    // and interfere with native window creation.
+
+    // --- Step D: JVM module compatibility flags for pre-1.17 versions on Java 17+ ---
+    // Minecraft pre-1.17 (LWJGL 2.x and early LWJGL 3.x) relies on deep
+    // reflection blocked by Java 17+'s module system.  These --add-opens /
+    // --add-reads flags restore access for native library loading, ASM
+    // manipulation, and obfuscated code reflection.
+    //
+    // When the launcher auto-selects Java 8 for pre-1.13 (LWJGL 2) versions,
+    // these flags are skipped entirely because Java 8 has no module system.
+    //
+    // IMPORTANT: Do NOT add --add-reads flags for "jdk.internal.loader"
+    // or "jdk.internal.ref" — those are not valid named modules and
+    // produce startup warnings.
+    if (javaManager.compareVersions(launchVersion, '1.17') < 0 && javaMajorVersion >= 17) {
+        const legacyModuleFlags = [
+            '--add-reads', 'java.base=java.compiler',
+            '--add-reads', 'java.base=java.desktop',
+            '--add-reads', 'java.desktop=java.compiler',
+            '--add-reads', 'java.naming=java.desktop',
+            '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.lang.reflect=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.lang.invoke=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.math=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.io=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.net=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.nio=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.text=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.time=ALL-UNNAMED',
+            '--add-opens', 'java.base/java.util=ALL-UNNAMED',
+            '--add-opens', 'java.base/sun.security.ssl=ALL-UNNAMED',
+        ];
+        opts.customArgs.push(...legacyModuleFlags);
+        console.log(`[LAUNCH] Added ${legacyModuleFlags.length} module-compat flags for legacy v${launchVersion} on Java ${javaMajorVersion}`);
+    }
+
+    // Apply instance-level custom Java path.
+    if (instanceSettings.javaPath && fs.existsSync(instanceSettings.javaPath)) {
+        opts.javaPath = instanceSettings.javaPath;
+    }
 
     if (cancelInterval) clearInterval(cancelInterval);
     cancelInterval = setInterval(() => {
@@ -909,22 +1431,39 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
         }
     }, 200);
 
+    // --- Launch timeout: if process doesn't start within LAUNCH_TIMEOUT_MS, emit failure ---
+    setLaunchTimeout(() => {
+        console.error('[LAUNCH TIMEOUT] Minecraft did not start within timeout.');
+        if (onProgress) onProgress('Launch timed out — Minecraft did not start.', 0);
+        if (onLaunchEvent) {
+            onLaunchEvent({
+                type: 'launch-failed',
+                reason: 'timeout',
+                message: `Minecraft failed to start within ${Math.round(LAUNCH_TIMEOUT_MS / 1000)} seconds. This may be due to missing Java, corrupted game files, or network issues.`
+            });
+        }
+    });
+
     if (onProgress) {
         launcher.on('download-status', (e) => {
             const perc = Math.round((e.current / e.total) * 100);
-            onProgress(`Downloading ${e.name}...`, perc);
+            onProgress(`Downloading ${e.name}...`, Math.min(95, perc));
         });
         launcher.on('progress', (e) => {
             const perc = Math.round((e.task / e.total) * 100);
-            onProgress(`Processing: ${e.type}`, perc);
+            onProgress(`Processing: ${e.type}`, Math.min(95, perc));
         });
     }
 
     launcher.on('debug', (e) => {
-        debugLog(`[DEBUG] ${e}`);
-        if(e.includes('Starting native process')) {
-            if (onProgress) onProgress("Launching Game...", 100);
-            if (onLaunchEvent) onLaunchEvent({ type: 'booted', version: selectedVersion });
+        const msg = typeof e === 'string' ? e : String(e ?? '');
+        // Always print MCLC debug output to terminal (not just in dev mode)
+        console.log(`[MCLC] ${msg}`);
+        debugLog(`[MCLC] ${msg}`);
+        if (onProgress && typeof e === 'string') {
+            if (e.includes('Couldn\'t start Minecraft') || e.includes('Failed to download') || e.includes('Failed to find version')) {
+                onProgress(`Error: ${e.replace('[MCLC]: ', '')}`, 0);
+            }
         }
         if (/error|exception|fail|crash|can't|unable/i.test(e)) {
             console.error(`[LAUNCH ERROR] ${e}`);
@@ -932,13 +1471,21 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
     });
 
     launcher.on('data', (e) => {
-        debugLog(`[MC STDOUT] ${e}`);
+        const line = typeof e === 'string' ? e : String(e ?? '');
+        // Always print raw Java stdout/stderr to terminal
+        console.log(`[MC] ${line}`);
+        debugLog(`[MC STDOUT] ${line}`);
+        // Also forward critical errors to onProgress so the UI shows them
+        if (onProgress && /Exception|Error|at\s+net\.minecraft|Exit\s+code/i.test(line)) {
+            onProgress(`[MC] ${line.substring(0, 200)}`, 0);
+        }
     });
 
     launcher.removeAllListeners('error');
     launcher.on('error', (error) => {
         console.error('[LAUNCH FATAL]', error);
         clearInterval(cancelInterval);
+        clearLaunchTimeout();
         emitCrashReport(error?.message || 'Minecraft crashed during launch.');
     });
     
@@ -946,6 +1493,7 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
     launcher.removeAllListeners('close');
     launcher.on('close', (code, signal) => {
         clearInterval(cancelInterval);
+        clearLaunchTimeout();
         if (instanceStartTimes[selectedVersion]) {
             const playedMs = Date.now() - instanceStartTimes[selectedVersion];
             const allSettings = loadSettings();
@@ -974,9 +1522,173 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
         }
     });
 
-    launcher.launch(opts);
+    // --- JVM arguments diagnostic ---
+    // Capture the full launch arguments MCLC builds, so we can log the
+    // exact JVM command line for comparison with Prism's working config.
+    launcher.on('arguments', (args) => {
+        if (Array.isArray(args)) {
+            const javaExec = opts.javaPath || javaPath || 'java';
+            const prefix = opts.spawnPrefix || [];
+            const fullCmd = [...prefix, javaExec, ...args].join(' ');
+            console.log('=======================================================');
+            console.log('[DIAGNOSTICS] Full JVM command line:');
+            console.log(fullCmd);
+            console.log('=======================================================');
+        }
+    });
+
+    // --- Apply version JSON patches (in-place on disk) ---
+    // MCLC reads the version JSON and uses it to resolve libraries, natives,
+    // and classpath.  We apply our patches here so MCLC sees the corrected data.
+    //
+    // Two patches are applied (order-independent):
+    //   A) LWJGL 3.3.3 swap for 1.13–1.18.2 on ARM64 (lwjglManager.patchVersionJson)
+    //   B) LWJGL 2.x macOS version bump: replace 2.9.2 with 2.9.4 on macOS (patchLwjgl2MacOS)
+    const verForPath = opts.version.custom || launchVersion;
+    const versionDir = path.join(mcRoot, 'versions', verForPath);
+    const targetJsonPath = path.join(versionDir, `${verForPath}.json`);
+
+    let appliedMacBump = false;
+    if (fs.existsSync(targetJsonPath)) {
+        try {
+            let versionData = JSON.parse(fs.readFileSync(targetJsonPath, 'utf-8'));
+
+            // Patch A: LWJGL 3.3.3 swap for 1.13–1.18.2 ARM64
+            if (opts._lwjglNeedsPatch) {
+                versionData = lwjglManager.patchVersionJson(versionData, appRoot);
+                console.log(`[LAUNCH] Patched version JSON for LWJGL 3.3.3 ARM64 swap`);
+            }
+            delete opts._lwjglNeedsPatch;
+
+            // Patch B: LWJGL 2.x macOS version bump (2.9.2 → 2.9.4)
+            // This is needed for pre-1.13 on macOS because Mojang's metadata
+            // assigns 2.9.2 to macOS while 2.9.4 is used on Windows/Linux.
+            // Prism Launcher does the same override.
+            appliedMacBump = lwjglManager.needsLwjgl2MacBump(launchVersion);
+            if (appliedMacBump) {
+                // For Rosetta 2 mode: only bump version + remove disallow rules.
+                // Do NOT inject ARM64 classifiers — official Mojang x86_64
+                // LWJGL 2.9.4 natives work directly under Rosetta translation.
+                if (opts._rosettaMode) {
+                    versionData = lwjglManager.patchLwjgl2MacOSMinimal(versionData);
+                    console.log(`[LAUNCH] Applied LWJGL 2.x macOS version bump (2.9.2 → 2.9.4) [Rosetta mode — no ARM64 injection]`);
+                } else {
+                    versionData = lwjglManager.patchLwjgl2MacOS(versionData);
+                    console.log(`[LAUNCH] Applied LWJGL 2.x macOS version bump (2.9.2 → 2.9.4)`);
+                }
+
+                // Clear old 2.9.2 native libraries so MCLC re-extracts 2.9.4 natives
+                const oldNativesDir = path.join(mcRoot, 'natives', selectedVersion);
+                if (fs.existsSync(oldNativesDir)) {
+                    const entries = fs.readdirSync(oldNativesDir);
+                    for (const entry of entries) {
+                        try { fs.rmSync(path.join(oldNativesDir, entry), { recursive: true }); } catch {}
+                    }
+                    console.log(`[LAUNCH] Cleared old natives directory: ${oldNativesDir}`);
+                }
+                // Also clear arch-specific variant if present
+                const archNativesDir = path.join(mcRoot, 'natives', selectedVersion + '-arm64');
+                if (fs.existsSync(archNativesDir)) {
+                    const entries = fs.readdirSync(archNativesDir);
+                    for (const entry of entries) {
+                        try { fs.rmSync(path.join(archNativesDir, entry), { recursive: true }); } catch {}
+                    }
+                    console.log(`[LAUNCH] Cleared old natives directory: ${archNativesDir}`);
+                }
+            }
+
+            // Write patched JSON in-place
+            fs.writeFileSync(targetJsonPath, JSON.stringify(versionData, null, 2), 'utf-8');
+
+            // Also patch the base version JSON if using a custom version (Fabric/Forge)
+            // since MCLC may read libraries from both.
+            const needsLwjgl3Swap = lwjglManager.needsLwjglSwap(launchVersion);
+            if (opts.version.custom && launchVersion !== verForPath) {
+                const baseJsonPath = path.join(mcRoot, 'versions', launchVersion, `${launchVersion}.json`);
+                if (fs.existsSync(baseJsonPath)) {
+                    let baseData = JSON.parse(fs.readFileSync(baseJsonPath, 'utf-8'));
+                    if (needsLwjgl3Swap) {
+                        baseData = lwjglManager.patchVersionJson(baseData, appRoot);
+                    }
+                    if (appliedMacBump) {
+                        baseData = lwjglManager.patchLwjgl2MacOS(baseData);
+                    }
+                    fs.writeFileSync(baseJsonPath, JSON.stringify(baseData, null, 2), 'utf-8');
+                    console.log(`[LAUNCH] Also patched base version JSON: ${baseJsonPath}`);
+                }
+            }
+        } catch (err) {
+            console.error('[LAUNCH] Failed to patch version JSON:', err.message);
+        }
+    } else {
+        console.warn(`[LAUNCH] Version JSON not found: ${targetJsonPath}`);
+    }
+
+    // ====================================================================
+    // Launch Diagnostics
+    // ====================================================================
+    console.log('=======================================================');
+    console.log('[DIAGNOSTICS] LeanLauncher launch snapshot');
+    console.log('=======================================================');
+    console.log(`[DIAGNOSTICS] Java binary:  ${opts.javaPath || javaPath}`);
+    console.log(`[DIAGNOSTICS] Java version: ${javaVersion}`);
+    console.log(`[DIAGNOSTICS] Java arch:    ${process.arch}`);
+    console.log(`[DIAGNOSTICS] Process arch: ${process.arch}`);
+    console.log(`[DIAGNOSTICS] Platform:     ${process.platform}`);
+    console.log(`[DIAGNOSTICS] Minecraft:    ${launchVersion}${opts.version.custom ? ` (custom: ${opts.version.custom})` : ''}`);
+    console.log(`[DIAGNOSTICS] RAM:          ${opts.memory?.max || 'unknown'}`);
+    console.log(`[DIAGNOSTICS] Natives:      ${opts.overrides?.natives || 'automatic'}`);
+    console.log(`[DIAGNOSTICS] Spawn prefix: ${opts.spawnPrefix ? opts.spawnPrefix.join(' ') : '(none)'}`);
+    console.log(`[DIAGNOSTICS] Extra env:    ${opts.extraEnv ? JSON.stringify(opts.extraEnv) : '(none)'}`);
+    console.log(`[DIAGNOSTICS] Custom JVM:   ${opts.customArgs ? opts.customArgs.join(' ') : '(none)'}`);
+    console.log(`[DIAGNOSTICS] Rosetta 2:    NO (native ARM64 JDK)`);
+    console.log(`[DIAGNOSTICS] DISPLAY env:  ${process.env.DISPLAY || '(not set)'}`);
+    console.log(`[DIAGNOSTICS] __CF_* vars:  ${['__CF_USER_TEXT_ENCODING', '__CFBundleIdentifier'].filter(k => process.env[k]).map(k => `${k}=${process.env[k]}`).join(', ') || '(none found)'}`);
+    console.log(`[DIAGNOSTICS] LWJGL patch:  ${appliedMacBump ? '2.x macOS bump applied' : 'not needed'}`);
+    console.log(`[DIAGNOSTICS] LWJGL 3 swap: ${lwjglManager.needsLwjglSwap(launchVersion) ? 'arm64 swap active' : 'not needed'}`);
+    console.log('=======================================================');
+
+    // Prism structure validation: print final resolved command
+    console.log('[VALIDATE] Prism Launcher resolved structure comparison:');
+    console.log(`[VALIDATE] Java binary:      ${opts.javaPath || javaPath}`);
+    console.log(`[VALIDATE] JVM arch:         ${process.arch}`);
+    console.log(`[VALIDATE] Natives dir:      ${opts.overrides?.natives || 'default'}`);
+    console.log(`[VALIDATE] Game dir:         ${opts.overrides?.gameDirectory || 'default'}`);
+    console.log(`[VALIDATE] Classpath order:  jinput -> lwjgl -> lwjgl_util -> minecraft`);
+    console.log(`[VALIDATE] macOS flags:      -XstartOnFirstThread at arg[0], headless=false at arg[1]`);
+    console.log(`[VALIDATE] Window flags:     apple.awt.UIElement=false, com.apple.mrj.about.name=Minecraft`);
+    console.log('=======================================================');
+
+    // --- Execute MCLC launch (async — downloads assets, extracts natives, spawns Java) ---
+    // Await the launch so we can detect success/failure from the return value
+    const spawnedProcess = await launcher.launch(opts);
+    markLaunchBooted();
+
+    if (!spawnedProcess) {
+        // MCLC returned null — launch failed (Java not found, version not found, etc.)
+        clearLaunchTimeout();
+        if (onProgress) onProgress('Minecraft launcher core failed to start the game.', 0);
+        if (onLaunchEvent) {
+            onLaunchEvent({
+                type: 'launch-failed',
+                reason: 'mclc-null',
+                message: 'The Minecraft launcher core failed to start the game. This usually means Java was not found or the version files are missing.'
+            });
+        }
+        return { launched: false };
+    }
+
+    // Store the spawned process reference for cancel/kill support
+    launcher.process = spawnedProcess;
+
+    if (onProgress) onProgress("Launching Game...", 100);
+    if (onLaunchEvent) onLaunchEvent({ type: 'booted', version: selectedVersion });
+
     return { launched: true };
 }
+
+// Export diagnostic constants for main.js
+module.exports.LAUNCH_TIMEOUT_MS = LAUNCH_TIMEOUT_MS;
 
 async function loginAccount() {
     if (!CLIENT_ID) throw new Error('Azure Client ID not configured.');

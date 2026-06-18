@@ -1,5 +1,24 @@
-# Minecraft instances
+# Minecraft runtime data (auto-downloaded)
+minecraft/
+
+# JRE runtime cache (auto-downloaded)
+jre-cache/
+jre-cache-x86/
+
+# LWJGL cache (auto-extracted)
+lwjgl-cache/
+
+# Minecraft instances (user data)
 minecraft/instances/*/
+
+# Prism reference (dev-only)
+Prism reference/
+
+# Installer binaries
+installers/fabric-installer.jar
+
+# Backup files
+*.bak
 
 # OS files
 desktop.ini

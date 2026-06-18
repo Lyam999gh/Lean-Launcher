@@ -42,6 +42,12 @@
                 <button id="maximize-btn" class="win-btn">▢</button>
                 <button id="close-btn" class="win-btn close-btn">✕</button>
             </div>
+            <a id="kofi-btn" class="kofi-btn" href="https://ko-fi.com/lyam999gh" target="_blank" title="Support me on Ko-fi" rel="noopener">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.085-1.826 6.649-5.916zm-6.411 3.395c-.14.793-.576 1.498-1.272 2.054-1.038.827-2.662 1.221-5.243 1.221H5.651c-.478 0-.866-.237-.866-.789V8.416c0-.552.388-.789.866-.789h4.989c1.969 0 3.719.253 4.833 1.073 1.126.829 1.574 1.976 1.186 3.643z"/>
+                </svg>
+                <span class="kofi-label">Support me</span>
+            </a>
         </nav>
 
         <main class="main-content">
@@ -87,6 +93,15 @@
                     <div class="settings-scroll-area">
                         <div class="about-section whats-new-section" id="whats-new-container">
                         <!-- Populated dynamically from changelog.json -->
+                    </div>
+
+                    <div class="about-section release-info-section release-hero">
+                        <h3>Release of Lean Launcher</h3>
+                        <p class="release-tagline">The easiest way to play optimized Minecraft</p>
+                        <div class="release-meta">
+                            <span class="release-badge">v1.0.0</span>
+                            <span class="release-date">Released June 15, 2026</span>
+                        </div>
                     </div>
 
                     <div class="about-section qa-section">
@@ -462,7 +477,7 @@
         </div>
     </div>
 
-    <div id="fps-warning-modal" class="launcher-modal fps-warning-modal">
+    <div id="fps-warning-modal" class="launcher-modal fps-warning-modal hidden">
         <div class="launcher-modal-card fps-warning-card">
             <div class="fps-warning-icon">
                 <span class="material-symbols-outlined" style="font-size: 36px;">warning</span>

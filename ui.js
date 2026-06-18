@@ -298,8 +298,26 @@ function formatCrashReport(report) {
         }
     }
     if (report.code === 1 || report.signal) {
-        suggestions.push('• The process was terminated unexpectedly. Check for antivirus interference or low system resources.');
+        // On macOS, exit code 1 usually means native libraries were blocked or mismatched
+        if (report.platform === 'darwin' && report.arch === 'arm64') {
+            if (report.nativeLibraryError || report.errorClass?.includes('UnsatisfiedLinkError')) {
+                suggestions.push('• Architecture mismatch detected! macOS on Apple Silicon requires ARM64 (arm64) native libraries, but the launcher is loading an Intel (x86_64) Java runtime which cannot load them.');
+                suggestions.push('• Running: arch -x86_64 /path/to/java causes Intel Java to fail loading ARM64 .dylib files. The JDK must be ARM64 (aarch64).');
+                suggestions.push('• Fix: Run `java -version` in terminal to verify architecture. Look for "aarch64" or "arm64" in the output.');
+            } else {
+                suggestions.push('• The process was terminated unexpectedly. This is often caused by macOS Gatekeeper/quarantine blocking unsigned native libraries.');
+                suggestions.push('• Try: xattr -dr com.apple.quarantine "~/Library/Application Support/Lean Launcher"');
+            }
+        } else if (report.nativeLibraryError) {
+            suggestions.push('• A native library failed to load. Check that your graphics drivers are up to date.');
+        } else {
+            suggestions.push('• The process was terminated unexpectedly. Check for antivirus interference or low system resources.');
+        }
         if (report.signal === 'SIGKILL') suggestions.push('• SIGKILL often means an out-of-memory killer or forced termination.');
+    }
+    if (report.javaMajorMismatch) {
+        suggestions.push('• Java version mismatch: the compiled class version does not match the running JVM. This usually means the selected Java is too old for this Minecraft version.');
+        suggestions.push('• Go to Instance Settings → Java Path to set a compatible JDK, or use the auto-download feature.');
     }
     if (!suggestions.length) {
         suggestions.push('• Check the crash report file below for specific mod or game errors.');
@@ -784,7 +802,7 @@ function setStatus(message, progress = 0) {
 const CHANGELOG_FALLBACK = [
   {
     version: '1.0.0',
-    date: 'June 15th, 2026',
+    date: 'June 15, 2026',
     title: 'This is the first release of Lean Launcher.',
     description: '',
     features: [
@@ -804,6 +822,21 @@ const CHANGELOG_FALLBACK = [
           'Lean Client Old version support',
           'Multiple version targets and profile options',
           'Ready for lightweight and customizable setups'
+        ]
+      },
+      {
+        title: 'Cross-Platform Support',
+        items: [
+          'Native window controls work on Windows, macOS, and Linux',
+          'GitHub Actions CI/CD for automated multi-platform builds',
+          'Auto-updater with delta update support'
+        ]
+      },
+      {
+        title: 'macOS Enhancements',
+        items: [
+          'Dock, menu bar, and keychain now show \'Lean Launcher\' instead of \'Electron\'',
+          'Custom Lean Launcher icon visible in the Dock and app switcher'
         ]
       }
     ]
