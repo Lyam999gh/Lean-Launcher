@@ -1,5 +1,9 @@
 # Lean Launcher
 
+<p align="center">
+  <img src="leangif.gif" alt="Lean Launcher Preview" width="600">
+</p>
+
 A modern Minecraft launcher built with Electron for Windows, macOS, and Linux. Lean Launcher provides a streamlined experience for managing accounts, organizing instances, launching modpacks, and keeping installations up to date through a polished and intuitive interface.
 
 <p align="center">
