@@ -547,12 +547,47 @@ function updateProfileDisplay(name, minecraftId) {
     const dName = name?.trim() || (minecraftId ? 'Player' : 'Guest');
     usernameEl.textContent = dName;
     if (playerHead) {
-        if (minecraftId && minecraftId !== "00000000000000000000000000000000") playerHead.src = `https://mc-heads.net/avatar/${minecraftId}/100`;
-        else if (dName === 'Guest') playerHead.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' rx='20' fill='%23e8e8e8'/%3E%3Ctext x='50' y='60' font-family='Inter, sans-serif' font-size='52' fill='%23333' text-anchor='middle'%3E?%3C/text%3E%3C/svg%3E";
-        else playerHead.src = `https://mc-heads.net/avatar/${dName}/100`;
+        if (minecraftId && minecraftId !== "00000000000000000000000000000000") {
+            // Use mc-heads.net/head which renders the face from the official
+            // Minecraft texture URL (unlike /avatar which returns Steve for
+            // uncached skins). Try multiple reliable sources as fallbacks.
+            setAvatarWithFallback(playerHead, [
+                `https://mc-heads.net/head/${minecraftId}`,
+                `https://minotar.net/avatar/${minecraftId}`,
+            ], getDefaultGuestAvatar());
+        } else if (dName === 'Guest') {
+            playerHead.src = getDefaultGuestAvatar();
+        } else {
+            setAvatarWithFallback(playerHead, [
+                `https://mc-heads.net/head/${dName}`,
+                `https://minotar.net/avatar/${dName}`,
+            ], getDefaultGuestAvatar());
+        }
     }
     applyTranslations();
     setSignedInState(dName !== 'Guest');
+}
+
+/**
+ * Try each URL in `urls` as the .src of `img`.
+ * When one fails to load (onerror), advance to the next.
+ * If all fail, use `fallback`.
+ * Resets onerror on success so no double-fallbacks occur.
+ */
+function setAvatarWithFallback(img, urls, fallback) {
+    let index = 0;
+    const tryNext = () => {
+        if (index < urls.length) {
+            const url = urls[index++];
+            img.onerror = tryNext;
+            img.onload = () => { img.onerror = null; };
+            img.src = url;
+        } else {
+            img.onerror = null;
+            img.src = fallback;
+        }
+    };
+    tryNext();
 }
 
 function getDefaultGuestAvatar() {
@@ -672,7 +707,7 @@ function renderAuthAccounts(authState) {
         accountCard.setAttribute('role', 'button');
 
         const avatar = account.minecraftId && account.minecraftId !== '00000000000000000000000000000000'
-            ? `https://mc-heads.net/avatar/${account.minecraftId}/100`
+            ? `https://mc-heads.net/head/${account.minecraftId}`
             : getDefaultGuestAvatar();
 
         accountCard.innerHTML = `

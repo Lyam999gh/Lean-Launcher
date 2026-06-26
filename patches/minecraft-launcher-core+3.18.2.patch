@@ -139,7 +139,7 @@ index 111a797..e5a2628
 diff --git a/node_modules/minecraft-launcher-core/components/launcher.js b/node_modules/minecraft-launcher-core/components/launcher.js
 old mode 100644
 new mode 100755
-index c7063a7..c4770b3
+index c7063a7..9ded73f
 --- a/node_modules/minecraft-launcher-core/components/launcher.js
 +++ b/node_modules/minecraft-launcher-core/components/launcher.js
 @@ -10,7 +10,11 @@ class MCLCore extends EventEmitter {
@@ -229,7 +229,7 @@ index c7063a7..c4770b3
        classPaths.push(file.mainClass)
  
        this.emit('debug', '[MCLC]: Attempting to download assets')
-@@ -180,11 +215,233 @@ class MCLCore extends EventEmitter {
+@@ -180,11 +215,273 @@ class MCLCore extends EventEmitter {
    }
  
    startMinecraft (launchArguments) {
@@ -352,7 +352,21 @@ index c7063a7..c4770b3
 +        this.emit('debug', `[MCLC]: macOS: .app bundle at ${appBundle}`);
 +
 +        // Launch via open (async — we don't track the open process)
++        // On macOS 27+, /usr/bin/open may reject unsigned .app bundles in
++        // temp directories due to TCC restrictions.  We try it first (for
++        // proper WindowServer registration), but also spawn the wrapper
++        // script directly as a fallback — the PID poll will catch whichever
++        // one succeeds first.
 +        child.spawn('/usr/bin/open', [appBundle], { stdio: 'ignore' });
++        // Also spawn the wrapper script directly in parallel as a fallback.
++        // The wrapper writes its PID to the same pidFile, so whichever
++        // process starts first will be tracked.
++        child.spawn('/bin/bash', [wrapperPath], {
++          cwd: this.options.overrides.cwd || this.options.root,
++          env: cleanEnv,
++          stdio: 'ignore',
++          detached: false,
++        });
 +
 +        // ================================================================
 +        // Monitor the REAL Java process (not the open helper)
@@ -401,6 +415,32 @@ index c7063a7..c4770b3
 +        setTimeout(() => {
 +          if (!javaPid) {
 +            clearInterval(pidPoll);
++            // Read stderr/stdout logs for diagnostics before cleanup
++            try {
++              if (fs.existsSync(stderrLog)) {
++                const stderrText = fs.readFileSync(stderrLog, 'utf-8').trim();
++                if (stderrText) {
++                  this.emit('debug', `[MCLC]: Stderr log contents:\n${stderrText.substring(0, 4096)}`);
++                }
++              }
++            } catch { /* ignore */ }
++            try {
++              if (fs.existsSync(stdoutLog)) {
++                const stdoutText = fs.readFileSync(stdoutLog, 'utf-8').trim();
++                if (stdoutText) {
++                  this.emit('debug', `[MCLC]: Stdout log contents:\n${stdoutText.substring(0, 4096)}`);
++                }
++              }
++            } catch { /* ignore */ }
++            try {
++              const wrapperExists = fs.existsSync(wrapperPath);
++              const appBundleExists = fs.existsSync(appBundle);
++              this.emit('debug', `[MCLC]: Wrapper exists=${wrapperExists}, App bundle exists=${appBundleExists}`);
++              if (wrapperExists) {
++                const mode = fs.statSync(wrapperPath).mode.toString(8);
++                this.emit('debug', `[MCLC]: Wrapper permissions: ${mode}`);
++              }
++            } catch { /* ignore */ }
 +            this.emit('debug', '[MCLC]: Timed out waiting for Java PID — launch may have failed silently');
 +            try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
 +            this.emit('close', 1);

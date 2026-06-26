@@ -778,27 +778,38 @@ async function resolveFabricInstall(baseVersion, instanceSettings) {
         }
         if (!resolvedLoaderVersion) throw new Error(`No Fabric loader version found for ${baseVersion}`);
         const profileName = `fabric-loader-${resolvedLoaderVersion}-${baseVersion}`;
-        return { loaderVersion: resolvedLoaderVersion, installerVersion: 'bundled', profileName, installerJarPath: bundledInstallerPath, installerUrl: null };
+        return { loaderVersion: resolvedLoaderVersion, installerVersion: null, profileName, installerJarPath: bundledInstallerPath, installerUrl: null };
     }
 
-    // 2. Fallback: download the installer from Fabric's servers
+    // 2. Fallback: download the installer from Fabric's servers.
+    //    Always fetch the installer list from the meta API so we get the correct download URL,
+    //    and never trust a saved version string (e.g. 'bundled') as a real version number.
     const [loaderResponse, installerResponse] = await Promise.all([
         loaderVersion ? Promise.resolve(null) : retryFetchJson(`https://meta.fabricmc.net/v2/versions/loader/${baseVersion}`),
-        installerVersion ? Promise.resolve(null) : retryFetchJson('https://meta.fabricmc.net/v2/versions/installer')
+        retryFetchJson('https://meta.fabricmc.net/v2/versions/installer')
     ]);
 
     const loaders = loaderVersion ? [] : loaderResponse;
-    const installers = installerVersion ? [] : installerResponse;
+    const installers = installerResponse;
 
     const resolvedLoaderVersion = loaderVersion || loaders.find(entry => entry?.loader?.stable)?.loader?.version || loaders[0]?.loader?.version;
-    const resolvedInstallerVersion = installerVersion || installers.find(entry => entry?.stable)?.version || installers[0]?.version;
+    // Resolve the installer version from the meta API: first check if the saved version
+    // is a real version (not 'bundled'), otherwise auto-select the latest stable.
+    const targetedInstallerVersion = installerVersion && installerVersion !== 'bundled'
+        ? installerVersion
+        : null;
+    const resolvedInstallerEntry = targetedInstallerVersion
+        ? installers.find(e => e.version === targetedInstallerVersion)
+        : installers.find(e => e.stable) || installers[0];
+    const resolvedInstallerVersion = resolvedInstallerEntry?.version;
 
     if (!resolvedLoaderVersion) throw new Error(`No Fabric loader version found for ${baseVersion}`);
     if (!resolvedInstallerVersion) throw new Error('No Fabric installer version found');
 
     const profileName = `fabric-loader-${resolvedLoaderVersion}-${baseVersion}`;
     const installerJarPath = path.join(appRoot, 'minecraft', 'cache', 'installers', 'fabric', `${resolvedInstallerVersion}.jar`);
-    const installerUrl = `https://maven.fabricmc.net/net/fabricmc/fabric-installer/${resolvedInstallerVersion}/fabric-installer-${resolvedInstallerVersion}.jar`;
+    // Use the URL from the meta API response — it's always authoritative and correct
+    const installerUrl = resolvedInstallerEntry.url;
 
     return { loaderVersion: resolvedLoaderVersion, installerVersion: resolvedInstallerVersion, profileName, installerJarPath, installerUrl };
 }
@@ -941,7 +952,13 @@ async function ensureFabricInstalled(baseVersion, instanceSettings, mcRoot, sele
     const allSettings = loadSettings();
     if (!allSettings[selectedVersion]) allSettings[selectedVersion] = {};
     allSettings[selectedVersion].fabricLoaderVersion = installInfo.loaderVersion;
-    allSettings[selectedVersion].fabricInstallerVersion = installInfo.installerVersion;
+    if (installInfo.installerVersion) {
+        allSettings[selectedVersion].fabricInstallerVersion = installInfo.installerVersion;
+    } else {
+        // If using the bundled installer, clear any stale version string so the
+        // meta API always resolves a real version on the next run.
+        delete allSettings[selectedVersion].fabricInstallerVersion;
+    }
     allSettings[selectedVersion].fabricProfileName = installInfo.profileName;
     saveSettings(allSettings);
 
@@ -1009,7 +1026,7 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
     } else {
         if(onProgress) onProgress("Refreshing Microsoft Token...", 10);
         const xboxManager = await authManager.refresh(activeAccount.refreshToken);
-        const mcToken = await xboxManager.getMinecraft();
+        const mcToken = await getMinecraftTokenWithRetry(xboxManager);
         authorization = mcToken?.mclc?.();
         if (!authorization) throw new Error('Failed to obtain Minecraft authorization.');
 
@@ -1690,6 +1707,32 @@ async function startLeanClient(options, onProgress, onLaunchEvent) {
 // Export diagnostic constants for main.js
 module.exports.LAUNCH_TIMEOUT_MS = LAUNCH_TIMEOUT_MS;
 
+/**
+ * Calls xboxManager.getMinecraft() with retries on transient "Premature close" errors.
+ * This is a workaround for a known node-fetch v2 / Minecraft auth endpoint issue where
+ * chunked responses without content-length can cause premature socket close errors.
+ */
+async function getMinecraftTokenWithRetry(xboxManager, maxRetries = 5) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await xboxManager.getMinecraft();
+        } catch (e) {
+            const msg = typeof e?.message === 'string' ? e.message : String(e);
+            const isPrematureClose = /premature\s*close/i.test(msg) ||
+                /ERR_STREAM_PREMATURE_CLOSE/.test(msg) ||
+                /Invalid response body/i.test(msg);
+            if (isPrematureClose && attempt < maxRetries) {
+                const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+                console.log(`Minecraft auth attempt ${attempt} failed (Premature close), retrying in ${delay}ms...`);
+                await new Promise(r => setTimeout(r, delay));
+                continue;
+            }
+            throw e;
+        }
+    }
+    throw new Error('Failed to get Minecraft token after multiple retries.');
+}
+
 async function loginAccount() {
     if (!CLIENT_ID) throw new Error('Azure Client ID not configured.');
     const auth = new Auth({ client_id: CLIENT_ID, ...(CLIENT_SECRET ? { clientSecret: CLIENT_SECRET } : {}), redirect: REDIRECT_URI, prompt: 'select_account' });
@@ -1705,7 +1748,7 @@ async function loginAccount() {
         }
         throw e;
     }
-    const mcToken = await xboxManager.getMinecraft();
+    const mcToken = await getMinecraftTokenWithRetry(xboxManager);
     const accountName = mcToken.profile?.name || 'Player';
     const minecraftId = mcToken.profile?.id;
     const refreshToken = xboxManager.msToken?.refresh_token;
