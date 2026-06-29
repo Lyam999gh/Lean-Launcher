@@ -1,0 +1,167 @@
+diff --git a/node_modules/msmc/dist/cjs/auth/auth.js b/node_modules/msmc/dist/cjs/auth/auth.js
+index 651ac93..347cbdc 100644
+--- a/node_modules/msmc/dist/cjs/auth/auth.js
++++ b/node_modules/msmc/dist/cjs/auth/auth.js
+@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.Auth = void 0;
+ const tslib_1 = require("tslib");
+ const events_1 = tslib_1.__importDefault(require("events"));
+-const node_fetch_1 = tslib_1.__importDefault(require("node-fetch"));
+ const xbox_js_1 = require("./xbox.js");
+ const lexicon_js_1 = require("../util/lexicon.js");
+ const common_js_1 = require("../gui/common.js");
+@@ -144,16 +143,19 @@ class Auth extends events_1.default {
+     }
+     async _get(body) {
+         this.load("load.auth.microsoft");
+-        var MS_Raw = await (0, node_fetch_1.default)("https://login.live.com/oauth20_token.srf", {
++        var MS_Raw = await fetch("https://login.live.com/oauth20_token.srf", {
+             method: "post",
+             body: body,
+-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
++            headers: { 
++                "Content-Type": "application/x-www-form-urlencoded",
++                "User-Agent": "LeanLauncher/0.1.1",
++            },
+         });
+         // console.log(await MS_Raw.text())
+         (0, lexicon_js_1.errorResponse)(MS_Raw, "error.auth.microsoft");
+         var MS = await MS_Raw.json();
+         this.load("load.auth.xboxLive.1");
+-        var rxboxlive = await (0, node_fetch_1.default)("https://user.auth.xboxlive.com/user/authenticate", {
++        var rxboxlive = await fetch("https://user.auth.xboxlive.com/user/authenticate", {
+             method: "post",
+             body: JSON.stringify({
+                 Properties: {
+@@ -167,6 +169,7 @@ class Auth extends events_1.default {
+             headers: {
+                 "Content-Type": "application/json",
+                 Accept: "application/json",
++                "User-Agent": "LeanLauncher/0.1.1",
+             },
+         });
+         (0, lexicon_js_1.errorResponse)(rxboxlive, "error.auth.xboxLive");
+diff --git a/node_modules/msmc/dist/cjs/auth/minecraft.js b/node_modules/msmc/dist/cjs/auth/minecraft.js
+index 847523b..74c9f08 100644
+--- a/node_modules/msmc/dist/cjs/auth/minecraft.js
++++ b/node_modules/msmc/dist/cjs/auth/minecraft.js
+@@ -2,7 +2,6 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.Minecraft = void 0;
+ const tslib_1 = require("tslib");
+-const node_fetch_1 = tslib_1.__importDefault(require("node-fetch"));
+ const auth_js_1 = require("./auth.js");
+ const lexicon_js_1 = require("../util/lexicon.js");
+ const validate_js_1 = require("../util/validate.js");
+@@ -39,7 +38,7 @@ class Minecraft {
+         this.refreshTkn = refreshTkn;
+     }
+     async entitlements() {
+-        var r998 = await (0, node_fetch_1.default)("https://api.minecraftservices.com/entitlements/mcstore", {
++        var r998 = await fetch("https://api.minecraftservices.com/entitlements/mcstore", {
+             headers: {
+                 "Content-Type": "application/json",
+                 Accept: "application/json",
+diff --git a/node_modules/msmc/dist/cjs/auth/social.js b/node_modules/msmc/dist/cjs/auth/social.js
+index bc33978..3ee0878 100644
+--- a/node_modules/msmc/dist/cjs/auth/social.js
++++ b/node_modules/msmc/dist/cjs/auth/social.js
+@@ -2,7 +2,6 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.Social = void 0;
+ const tslib_1 = require("tslib");
+-const node_fetch_1 = tslib_1.__importDefault(require("node-fetch"));
+ const xPlayer_js_1 = require("../util/xPlayer.js");
+ class Social {
+     auth;
+@@ -23,13 +22,15 @@ class Social {
+     }
+     async xGet(endpoint, xuid) {
+         const target = xuid ? `xuid(${xuid})` : "me";
+-        let profileRaw = await (0, node_fetch_1.default)(`https://profile.xboxlive.com/users/${target}/${endpoint}`, {
++        let profileRaw = await fetch(`https://profile.xboxlive.com/users/${target}/${endpoint}`, {
+             headers: {
+                 "Content-Type": "application/json",
+                 "x-xbl-contract-version": "2",
+                 Authorization: this.auth,
++                "User-Agent": "LeanLauncher/0.1.1",
+             },
+         });
++        if (!profileRaw.ok) return { error: true, status: profileRaw.status };
+         return await profileRaw.json();
+     }
+ }
+diff --git a/node_modules/msmc/dist/cjs/auth/xbox.js b/node_modules/msmc/dist/cjs/auth/xbox.js
+index 6adbb21..ed03d9e 100644
+--- a/node_modules/msmc/dist/cjs/auth/xbox.js
++++ b/node_modules/msmc/dist/cjs/auth/xbox.js
+@@ -2,7 +2,6 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.Xbox = void 0;
+ const tslib_1 = require("tslib");
+-const node_fetch_1 = tslib_1.__importDefault(require("node-fetch"));
+ const social_js_1 = require("./social.js");
+ const minecraft_js_1 = require("./minecraft.js");
+ const lexicon_js_1 = require("../util/lexicon.js");
+@@ -22,7 +21,7 @@ class Xbox {
+     }
+     async xAuth(RelyingParty = "http://xboxlive.com") {
+         this.load("load.auth.xsts");
+-        let rxsts = await (0, node_fetch_1.default)("https://xsts.auth.xboxlive.com/xsts/authorize", {
++        let rxsts = await fetch("https://xsts.auth.xboxlive.com/xsts/authorize", {
+             method: "post",
+             body: JSON.stringify({
+                 Properties: { SandboxId: "RETAIL", UserTokens: [this.xblToken.Token] },
+@@ -32,8 +31,10 @@ class Xbox {
+             headers: {
+                 "Content-Type": "application/json",
+                 Accept: "application/json",
++                "User-Agent": "LeanLauncher/0.1.1",
+             },
+         });
++        (0, lexicon_js_1.errorResponse)(rxsts, "error.auth.xsts.http");
+         var XSTS = await rxsts.json();
+         if (XSTS.XErr) {
+             var ts = "error.auth.xsts";
+@@ -75,7 +76,7 @@ class Xbox {
+     async getMinecraft() {
+         const auth = await this.xAuth("rp://api.minecraftservices.com/");
+         this.load("load.auth.minecraft.login");
+-        var rlogin_with_xbox = await (0, node_fetch_1.default)("https://api.minecraftservices.com/authentication/login_with_xbox", {
++        var rlogin_with_xbox = await fetch("https://api.minecraftservices.com/authentication/login_with_xbox", {
+             method: "post",
+             body: JSON.stringify({
+                 identityToken: auth,
+@@ -83,16 +84,18 @@ class Xbox {
+             headers: {
+                 "Content-Type": "application/json",
+                 Accept: "application/json",
++                "User-Agent": "LeanLauncher/0.1.1",
+             },
+         });
+         (0, lexicon_js_1.errorResponse)(rlogin_with_xbox, "error.auth.minecraft.login");
+         var MCauth = (await rlogin_with_xbox.json());
+         this.load("load.auth.minecraft.profile");
+-        var r998 = await (0, node_fetch_1.default)("https://api.minecraftservices.com/minecraft/profile", {
++        var r998 = await fetch("https://api.minecraftservices.com/minecraft/profile", {
+             headers: {
+                 "Content-Type": "application/json",
+                 Accept: "application/json",
+                 Authorization: `Bearer ${MCauth.access_token}`,
++                "User-Agent": "LeanLauncher/0.1.1",
+             },
+         });
+         var MCprofile = (await r998.json());
+diff --git a/node_modules/msmc/dist/cjs/util/lexicon.js b/node_modules/msmc/dist/cjs/util/lexicon.js
+index d6d7b50..f29e6f3 100644
+--- a/node_modules/msmc/dist/cjs/util/lexicon.js
++++ b/node_modules/msmc/dist/cjs/util/lexicon.js
+@@ -66,7 +66,7 @@ function error(ts) {
+ exports.error = error;
+ function errorResponse(response, ts) {
+     if (!response.ok)
+-        throw { response, ts };
++        throw new Error(`${ts} (HTTP ${response.status} ${response.statusText})`);
+ }
+ exports.errorResponse = errorResponse;
+ function wrapError(code) {
