@@ -132,7 +132,10 @@ function showOrCreateMainWindow() {
 ipcMain.handle('login-account', async () => {
   try { return { success: true, result: await loginAccount() }; }
   catch (error) {
-    const msg = typeof error?.message === 'string' ? error.message : String(error);
+    const msg = typeof error?.message === 'string' ? error.message
+              : typeof error?.ts === 'string' ? error.ts
+              : typeof error === 'string' ? error
+              : String(error);
     return { success: false, error: msg, cancelled: Boolean(error?.cancelled) };
   }
 });
@@ -192,8 +195,12 @@ ipcMain.handle('launch-game', async (event, payload) => {
       return { success: true, result }; 
   }
   catch (error) {
-    // Launch threw synchronously (e.g., Java validation failed)
-    const msg = error?.message || String(error);
+    // Launch threw synchronously (e.g., Java validation failed, auth refresh failed)
+    // Use a robust chain: .message string → .ts string (msmc error code) → JSON → String
+    const msg = typeof error?.message === 'string' ? error.message
+              : typeof error?.ts === 'string' ? error.ts
+              : typeof error === 'string' ? error
+              : String(error);
     if (senderWindow && !senderWindow.isDestroyed()) {
       event.sender.send('launch-failed', { reason: 'error', message: msg });
     }
