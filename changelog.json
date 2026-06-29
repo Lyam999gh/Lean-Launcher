@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.1.1",
+    "date": "June 26, 2026",
+    "title": "Bug fixes and improvements",
+    "description": "Fixes macOS launch issues and player head avatar display.",
+    "features": [
+      {
+        "title": "Fixes",
+        "items": [
+          "Fixed macOS versions failing to launch (Java PID timeout) by adding a direct spawn fallback",
+          "Fixed player head avatar showing Steve instead of the correct 3D skin",
+          "Updated account manager to use proper avatar rendering",
+          "Improved Fabric installer URL resolution to use authoritative meta API URLs"
+        ]
+      }
+    ]
+  },
+  {
     "version": "1.0.0",
     "date": "June 15, 2026",
     "title": "This is the first release of Lean Launcher.",
