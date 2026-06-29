@@ -2785,7 +2785,7 @@ async function initUI() {
     }, { passive: true });
 
     // --- Auto-update event listeners ---
-    if (typeof window.updateAPI !== 'undefined') {
+    if (electronAvailable) {
         const updateModal = document.getElementById('update-modal');
         const updateVersion = document.getElementById('update-version');
         const updateReleaseNotes = document.getElementById('update-release-notes');
@@ -2797,7 +2797,7 @@ async function initUI() {
 
         let updateDownloaded = false;
 
-        window.updateAPI.onUpdateAvailable((info) => {
+        ipcRenderer.on('update-available', (_event, info) => {
             if (!updateModal || !updateVersion || !updateReleaseNotes) return;
             updateVersion.textContent = `Version ${info.version}`;
             if (info.releaseDate) {
@@ -2816,7 +2816,7 @@ async function initUI() {
             requestAnimationFrame(() => updateModal.classList.add('visible'));
         });
 
-        window.updateAPI.onDownloadProgress((progress) => {
+        ipcRenderer.on('download-progress', (_event, progress) => {
             if (!updateProgressFill || !updateProgressText) return;
             updateProgressFill.style.width = `${progress.percent}%`;
             const mbDownloaded = (progress.transferred / (1024 * 1024)).toFixed(1);
@@ -2824,7 +2824,7 @@ async function initUI() {
             updateProgressText.textContent = `Downloading... ${progress.percent}% (${mbDownloaded} / ${mbTotal} MB)`;
         });
 
-        window.updateAPI.onUpdateDownloaded((info) => {
+        ipcRenderer.on('update-downloaded', (_event, info) => {
             updateDownloaded = true;
             if (updateProgressContainer) updateProgressContainer.style.display = 'none';
             if (updateVersion) updateVersion.textContent = `Version ${info.version} — Ready to install`;
@@ -2834,7 +2834,7 @@ async function initUI() {
             }
         });
 
-        window.updateAPI.onUpdateError((error) => {
+        ipcRenderer.on('update-error', (_event, error) => {
             console.error('[Update] Error:', error.message);
             if (updateProgressContainer) updateProgressContainer.style.display = 'none';
             if (updateVersion) updateVersion.textContent = 'Update failed. Please try again later.';
@@ -2845,8 +2845,8 @@ async function initUI() {
         });
 
         updateRestartBtn?.addEventListener('click', () => {
-            if (updateDownloaded && window.updateAPI) {
-                window.updateAPI.restartAndInstall();
+            if (updateDownloaded) {
+                ipcRenderer.send('restart-and-install');
             }
         });
 
